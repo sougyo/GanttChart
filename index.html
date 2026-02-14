@@ -259,6 +259,8 @@ body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; font-size
   <div class="toolbar-group" id="thunder-controls">
     <div class="toolbar-sep"></div>
     <label><input type="checkbox" id="chk-thunder" checked onchange="toggleThunder(this.checked)"> カミナリ線</label>
+    <label>基準日:</label>
+    <input type="date" id="thunder-default-date" onchange="changeThunderDefault(this.value)">
   </div>
   <div class="toolbar-group" id="view-controls" style="display:none;">
     <label>期間:</label>
@@ -305,7 +307,7 @@ let state = {
     { name: '作業2', items: [] },
     { name: '作業3', items: [] }
   ],
-  thunderLine: { visible: true, points: [] }
+  thunderLine: { visible: true, points: [], defaultDate: fmtDate(new Date()) }
 };
 
 let appMode = 'edit'; // edit | view
@@ -362,8 +364,9 @@ function getXForDate(date, cols, cw) {
   for (let i = 0; i < cols.length; i++) {
     if (d >= cols[i].start && d <= cols[i].end) {
       const totalDays = daysBetween(cols[i].start, cols[i].end) + 1;
+      if (totalDays <= 1) return i * cw + cw / 2; // center in cell for day-unit
       const off = daysBetween(cols[i].start, d);
-      return i * cw + (off / totalDays) * cw;
+      return i * cw + (off / (totalDays - 1)) * cw;
     }
   }
   if (d < cols[0].start) return 0;
@@ -613,6 +616,24 @@ function renderMilestone(layer, item, ri, ii, rh) {
   layer.appendChild(el);
 }
 
+function getThunderPointsForRender() {
+  // Build a point for every row: use explicit point if exists, otherwise default date
+  const defDate = state.thunderLine.defaultDate || fmtDate(new Date());
+  const explicitMap = {};
+  state.thunderLine.points.forEach((p, i) => {
+    explicitMap[p.rowIndex] = { date: p.date, explicitIndex: i };
+  });
+  const allPoints = [];
+  for (let ri = 0; ri < state.rows.length; ri++) {
+    if (explicitMap[ri] !== undefined) {
+      allPoints.push({ rowIndex: ri, date: explicitMap[ri].date, explicit: true, explicitIndex: explicitMap[ri].explicitIndex });
+    } else {
+      allPoints.push({ rowIndex: ri, date: defDate, explicit: false, explicitIndex: -1 });
+    }
+  }
+  return allPoints;
+}
+
 function renderThunderLine() {
   const svg = document.getElementById('thunder-svg');
   const rh = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--row-height'));
@@ -622,13 +643,14 @@ function renderThunderLine() {
   svg.setAttribute('height', totalH);
   svg.innerHTML = '';
 
-  if (!state.thunderLine.visible || state.thunderLine.points.length === 0) return;
+  if (!state.thunderLine.visible) return;
 
-  const pts = [...state.thunderLine.points].sort((a, b) => a.rowIndex - b.rowIndex);
+  const pts = getThunderPointsForRender();
   const coords = pts.map(p => ({
     x: getXForDate(p.date, columns, colWidth),
     y: p.rowIndex * rh + rh / 2,
-    ri: p.rowIndex
+    explicit: p.explicit,
+    explicitIndex: p.explicitIndex
   }));
 
   // Lines
@@ -648,15 +670,18 @@ function renderThunderLine() {
     const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
     circle.setAttribute('cx', c.x);
     circle.setAttribute('cy', c.y);
-    circle.setAttribute('r', '5');
+    circle.setAttribute('r', c.explicit ? 5 : 3);
     circle.setAttribute('fill', '#d32f2f');
+    if (!c.explicit) circle.setAttribute('opacity', '0.5');
     circle.classList.add('thunder-dot');
     if (appMode === 'edit') {
       circle.addEventListener('contextmenu', e => {
         e.preventDefault(); e.stopPropagation();
-        showContextMenu(e.clientX, e.clientY, [
-          { label: 'カミナリ点を削除', action: () => { state.thunderLine.points.splice(i, 1); render(); } }
-        ]);
+        if (c.explicit) {
+          showContextMenu(e.clientX, e.clientY, [
+            { label: 'カミナリ点を削除（基準日に戻す）', action: () => { state.thunderLine.points.splice(c.explicitIndex, 1); render(); } }
+          ]);
+        }
       });
     }
     svg.appendChild(circle);
@@ -899,6 +924,11 @@ function addThunderPoint(ri, dateStr) {
 
 function toggleThunder(visible) {
   state.thunderLine.visible = visible;
+  render();
+}
+
+function changeThunderDefault(dateStr) {
+  state.thunderLine.defaultDate = dateStr;
   render();
 }
 
@@ -1202,10 +1232,12 @@ function handleFileImport(event) {
       const data = JSON.parse(e.target.result);
       if (data.rows && data.startDate && data.endDate) {
         state = data;
-        if (!state.thunderLine) state.thunderLine = { visible: true, points: [] };
+        if (!state.thunderLine) state.thunderLine = { visible: true, points: [], defaultDate: fmtDate(new Date()) };
+        if (!state.thunderLine.defaultDate) state.thunderLine.defaultDate = fmtDate(new Date());
         if (!state.fontSize) state.fontSize = 14;
         document.getElementById('sel-unit').value = state.timeUnit || 'month';
         document.getElementById('chk-thunder').checked = state.thunderLine.visible;
+        document.getElementById('thunder-default-date').value = state.thunderLine.defaultDate;
         selectedItems = [];
         viewRange = null;
         render();
@@ -1372,11 +1404,12 @@ function renderToCanvas() {
   });
 
   // Thunder line
-  if (state.thunderLine.visible && state.thunderLine.points.length > 0) {
-    const pts = [...state.thunderLine.points].sort((a, b) => a.rowIndex - b.rowIndex);
+  if (state.thunderLine.visible) {
+    const pts = getThunderPointsForRender();
     const coords = pts.map(p => ({
       x: sw + getXForDate(p.date, columns, colWidth),
-      y: hh + p.rowIndex * rh + rh / 2
+      y: hh + p.rowIndex * rh + rh / 2,
+      explicit: p.explicit
     }));
 
     ctx.strokeStyle = '#d32f2f';
@@ -1390,9 +1423,11 @@ function renderToCanvas() {
 
     coords.forEach(c => {
       ctx.beginPath();
-      ctx.arc(c.x, c.y, 5, 0, Math.PI * 2);
+      ctx.arc(c.x, c.y, c.explicit ? 5 : 3, 0, Math.PI * 2);
       ctx.fillStyle = '#d32f2f';
+      ctx.globalAlpha = c.explicit ? 1 : 0.5;
       ctx.fill();
+      ctx.globalAlpha = 1;
     });
   }
 
@@ -1424,6 +1459,7 @@ function showToast(msg) {
 // ===== Init =====
 document.addEventListener('DOMContentLoaded', () => {
   document.body.classList.add('edit-mode');
+  document.getElementById('thunder-default-date').value = state.thunderLine.defaultDate;
   render();
 });
 
