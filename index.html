@@ -1,0 +1,1358 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ガントチャート</title>
+<style>
+:root {
+  --font-size: 14px;
+  --row-height: 44px;
+  --header-height: 36px;
+  --sidebar-width: 180px;
+  --col-width: 80px;
+  --bar-height: 24px;
+  --border-color: #d0d0d0;
+  --header-bg: #f0f4f8;
+  --row-even-bg: #fafbfc;
+  --row-odd-bg: #ffffff;
+  --accent: #2196F3;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; font-size: var(--font-size); background: #eef1f5; color: #333; }
+
+#toolbar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  padding: 8px 12px; background: #fff; border-bottom: 1px solid #ccc;
+  box-shadow: 0 1px 3px rgba(0,0,0,.08); position: sticky; top: 0; z-index: 100;
+}
+#toolbar label { font-size: 0.85em; color: #555; }
+#toolbar select, #toolbar input, #toolbar button {
+  font-size: 0.85em; padding: 4px 8px; border: 1px solid #bbb; border-radius: 4px;
+}
+#toolbar button {
+  background: #fff; cursor: pointer; transition: background .15s;
+}
+#toolbar button:hover { background: #e3f0fc; }
+#toolbar button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.toolbar-sep { width: 1px; height: 24px; background: #ccc; margin: 0 4px; }
+.toolbar-group { display: flex; align-items: center; gap: 4px; }
+
+#gantt-wrapper {
+  display: grid;
+  grid-template-columns: var(--sidebar-width) 1fr;
+  grid-template-rows: var(--header-height) 1fr;
+  margin: 12px;
+  background: #fff;
+  border: 1px solid #bbb;
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0,0,0,.07);
+}
+#gantt-corner {
+  grid-row: 1; grid-column: 1;
+  background: var(--header-bg);
+  border-right: 2px solid var(--border-color);
+  border-bottom: 2px solid var(--border-color);
+  display: flex; align-items: center; justify-content: center;
+  font-weight: bold; font-size: 0.85em; color: #666;
+}
+#gantt-header-scroll {
+  grid-row: 1; grid-column: 2;
+  overflow: hidden;
+  border-bottom: 2px solid var(--border-color);
+  background: var(--header-bg);
+}
+#gantt-header {
+  display: flex; height: 100%;
+}
+.header-cell {
+  flex: 0 0 var(--col-width);
+  border-right: 1px solid var(--border-color);
+  display: flex; align-items: flex-end;
+  padding: 2px 4px; font-size: 0.85em; color: #555; font-weight: 600;
+  white-space: nowrap; overflow: hidden;
+}
+.header-cell.year-start { border-left: 2px solid #999; }
+
+#gantt-sidebar-scroll {
+  grid-row: 2; grid-column: 1;
+  overflow: hidden;
+  border-right: 2px solid var(--border-color);
+}
+#gantt-sidebar { }
+.sidebar-row {
+  height: var(--row-height);
+  border-bottom: 1px solid var(--border-color);
+  display: flex; align-items: center;
+  padding: 0 6px; gap: 4px;
+}
+.sidebar-row:nth-child(even) { background: var(--row-even-bg); }
+.sidebar-name {
+  flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  outline: none; font-size: inherit; border: none; background: transparent;
+  padding: 2px 4px; border-radius: 3px;
+}
+.sidebar-name:focus { background: #e8f0fe; }
+.sidebar-name[contenteditable="false"] { cursor: default; }
+.sidebar-btns { display: flex; gap: 2px; opacity: 0; transition: opacity .15s; }
+.sidebar-row:hover .sidebar-btns { opacity: 1; }
+.sidebar-btns button {
+  width: 20px; height: 20px; border: none; background: transparent;
+  cursor: pointer; font-size: 14px; color: #888; border-radius: 3px; line-height: 20px; padding: 0;
+}
+.sidebar-btns button:hover { background: #ddd; color: #333; }
+
+#gantt-body-scroll {
+  grid-row: 2; grid-column: 2;
+  overflow: auto;
+  position: relative;
+}
+#gantt-body {
+  position: relative;
+}
+.body-row {
+  display: flex; height: var(--row-height);
+  border-bottom: 1px solid var(--border-color);
+}
+.body-row:nth-child(even) { background: var(--row-even-bg); }
+.body-cell {
+  flex: 0 0 var(--col-width);
+  border-right: 1px solid #e8e8e8;
+  height: 100%;
+}
+.body-cell.year-start { border-left: 2px solid #bbb; }
+
+#items-layer {
+  position: absolute; top: 0; left: 0; pointer-events: none;
+}
+.gantt-item { position: absolute; pointer-events: auto; cursor: pointer; }
+.gantt-task {
+  height: var(--bar-height); border-radius: 4px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.8em; color: #fff; overflow: hidden;
+  white-space: nowrap; text-overflow: ellipsis; padding: 0 6px;
+  border: 2px solid transparent;
+  transition: box-shadow .1s;
+}
+.gantt-task:hover { box-shadow: 0 2px 6px rgba(0,0,0,.25); }
+.gantt-task.selected { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(33,150,243,.3); }
+.gantt-task .resize-handle {
+  position: absolute; top: 0; width: 6px; height: 100%; cursor: ew-resize;
+  opacity: 0;
+}
+.gantt-task .resize-handle.left { left: -2px; }
+.gantt-task .resize-handle.right { right: -2px; }
+.edit-mode .gantt-task:hover .resize-handle { opacity: 1; background: rgba(0,0,0,.15); }
+
+.gantt-milestone {
+  display: flex; align-items: center; gap: 2px;
+  font-size: 0.8em; white-space: nowrap;
+  border: 2px solid transparent; border-radius: 3px; padding: 1px 3px;
+}
+.gantt-milestone.selected { border-color: var(--accent); background: rgba(33,150,243,.08); }
+.milestone-mark { font-size: 1.3em; color: #d32f2f; line-height: 1; }
+.milestone-label { color: #333; }
+
+#thunder-svg {
+  position: absolute; top: 0; left: 0; pointer-events: none; z-index: 5;
+}
+.thunder-dot {
+  pointer-events: auto; cursor: pointer;
+}
+
+/* Context Menu */
+#context-menu {
+  position: fixed; background: #fff; border: 1px solid #ccc; border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.15); z-index: 200; min-width: 160px;
+  padding: 4px 0; display: none;
+}
+#context-menu .menu-item {
+  padding: 6px 16px; cursor: pointer; font-size: 0.9em;
+}
+#context-menu .menu-item:hover { background: #e8f0fe; }
+#context-menu .menu-sep { height: 1px; background: #e0e0e0; margin: 4px 0; }
+
+/* Modal */
+.modal-overlay {
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(0,0,0,.35); z-index: 300;
+  display: flex; align-items: center; justify-content: center;
+}
+.modal {
+  background: #fff; border-radius: 8px; padding: 20px; min-width: 320px;
+  box-shadow: 0 8px 32px rgba(0,0,0,.2);
+}
+.modal h3 { margin-bottom: 12px; font-size: 1.1em; }
+.modal .field { margin-bottom: 10px; }
+.modal .field label { display: block; font-size: 0.85em; color: #555; margin-bottom: 3px; }
+.modal .field input, .modal .field select {
+  width: 100%; padding: 6px 8px; border: 1px solid #bbb; border-radius: 4px; font-size: 0.95em;
+}
+.modal .field .color-options { display: flex; gap: 6px; flex-wrap: wrap; }
+.modal .field .color-opt {
+  width: 28px; height: 28px; border-radius: 50%; cursor: pointer;
+  border: 3px solid transparent; transition: border-color .1s;
+}
+.modal .field .color-opt.selected { border-color: #333; }
+.modal .modal-btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.modal .modal-btns button {
+  padding: 6px 18px; border: 1px solid #bbb; border-radius: 4px;
+  cursor: pointer; font-size: 0.9em;
+}
+.modal .modal-btns .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+/* View mode styles */
+.view-mode #gantt-wrapper { border-radius: 0; margin: 0; }
+.view-mode .gantt-task { border-radius: 5px; box-shadow: 0 1px 4px rgba(0,0,0,.15); }
+.view-mode .body-cell { border-right-color: #f0f0f0; }
+.view-mode .sidebar-btns { display: none !important; }
+
+/* Toast */
+#toast {
+  position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+  background: #333; color: #fff; padding: 10px 24px; border-radius: 6px;
+  font-size: 0.9em; z-index: 400; display: none; box-shadow: 0 4px 12px rgba(0,0,0,.3);
+}
+</style>
+</head>
+<body>
+
+<div id="toolbar">
+  <div class="toolbar-group">
+    <button id="btn-edit-mode" class="active" onclick="setMode('edit')">編集</button>
+    <button id="btn-view-mode" onclick="setMode('view')">表示</button>
+  </div>
+  <div class="toolbar-sep"></div>
+  <div class="toolbar-group">
+    <label>単位:</label>
+    <select id="sel-unit" onchange="changeUnit(this.value)">
+      <option value="month" selected>月</option>
+      <option value="week">週</option>
+      <option value="day">日</option>
+    </select>
+  </div>
+  <div class="toolbar-sep"></div>
+  <div class="toolbar-group">
+    <label>文字:</label>
+    <button onclick="changeFontSize(-1)">A-</button>
+    <button onclick="changeFontSize(1)">A+</button>
+  </div>
+  <div class="toolbar-sep"></div>
+  <div class="toolbar-group" id="edit-controls">
+    <button onclick="addColumnStart()">←列追加</button>
+    <button onclick="addColumnEnd()">列追加→</button>
+    <button onclick="removeColumnStart()">←列削除</button>
+    <button onclick="removeColumnEnd()">列削除→</button>
+    <button onclick="addRow()">行追加</button>
+  </div>
+  <div class="toolbar-group" id="thunder-controls">
+    <div class="toolbar-sep"></div>
+    <label><input type="checkbox" id="chk-thunder" checked onchange="toggleThunder(this.checked)"> カミナリ線</label>
+  </div>
+  <div class="toolbar-group" id="view-controls" style="display:none;">
+    <label>期間:</label>
+    <input type="date" id="view-start" onchange="applyViewRange()">
+    <span>〜</span>
+    <input type="date" id="view-end" onchange="applyViewRange()">
+    <button onclick="clearViewRange()">全期間</button>
+    <div class="toolbar-sep"></div>
+    <button onclick="copyAsImage()">画像コピー</button>
+  </div>
+  <div class="toolbar-sep"></div>
+  <div class="toolbar-group">
+    <button onclick="exportJSON()">エクスポート</button>
+    <button onclick="importJSON()">インポート</button>
+  </div>
+</div>
+
+<div id="gantt-wrapper">
+  <div id="gantt-corner">タスク名</div>
+  <div id="gantt-header-scroll"><div id="gantt-header"></div></div>
+  <div id="gantt-sidebar-scroll"><div id="gantt-sidebar"></div></div>
+  <div id="gantt-body-scroll">
+    <div id="gantt-body">
+      <div id="grid-layer"></div>
+      <div id="items-layer"></div>
+      <svg id="thunder-svg"></svg>
+    </div>
+  </div>
+</div>
+
+<div id="context-menu"></div>
+<div id="toast"></div>
+<input type="file" id="file-input" accept=".json" style="display:none" onchange="handleFileImport(event)">
+
+<script>
+// ===== State =====
+let state = {
+  timeUnit: 'month',
+  startDate: '2026-01-01',
+  endDate: '2026-12-31',
+  fontSize: 14,
+  rows: [
+    { name: '作業1', items: [] },
+    { name: '作業2', items: [] },
+    { name: '作業3', items: [] }
+  ],
+  thunderLine: { visible: true, points: [] }
+};
+
+let appMode = 'edit'; // edit | view
+let viewRange = null; // {start, end}
+let selectedItems = []; // [{rowIndex, itemIndex}]
+let columns = [];
+let colWidth = 80;
+let isDragging = false;
+let dragData = null;
+
+const COLORS = ['#4CAF50','#2196F3','#FF9800','#9C27B0','#F44336','#00BCD4','#795548','#607D8B','#E91E63','#3F51B5'];
+
+// ===== Date Utils =====
+function parseDate(s) { const p = s.split('-'); return new Date(+p[0], +p[1]-1, +p[2]); }
+function fmtDate(d) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+function addDays(d, n) { const r = new Date(d); r.setDate(r.getDate()+n); return r; }
+function daysBetween(a, b) { return Math.round((b.getTime()-a.getTime())/86400000); }
+function monthStart(d) { return new Date(d.getFullYear(), d.getMonth(), 1); }
+function monthEnd(d) { return new Date(d.getFullYear(), d.getMonth()+1, 0); }
+function weekStart(d) { const r = new Date(d); const day = r.getDay(); r.setDate(r.getDate() - (day === 0 ? 6 : day - 1)); return r; }
+function minDate(a,b) { return a < b ? a : b; }
+function maxDate(a,b) { return a > b ? a : b; }
+
+// ===== Column Generation =====
+function generateColumns(start, end, unit) {
+  const cols = [];
+  const sd = parseDate(start), ed = parseDate(end);
+  if (unit === 'month') {
+    let cur = monthStart(sd);
+    while (cur <= ed) {
+      const mEnd = monthEnd(cur);
+      cols.push({ start: new Date(cur), end: mEnd, label: String(cur.getMonth()+1), year: cur.getFullYear() });
+      cur = new Date(cur.getFullYear(), cur.getMonth()+1, 1);
+    }
+  } else if (unit === 'week') {
+    let cur = weekStart(sd);
+    while (cur <= ed) {
+      const wEnd = addDays(cur, 6);
+      cols.push({ start: new Date(cur), end: wEnd, label: `${cur.getMonth()+1}/${cur.getDate()}`, year: cur.getFullYear() });
+      cur = addDays(cur, 7);
+    }
+  } else {
+    let cur = new Date(sd);
+    while (cur <= ed) {
+      cols.push({ start: new Date(cur), end: new Date(cur), label: `${cur.getMonth()+1}/${cur.getDate()}`, year: cur.getFullYear() });
+      cur = addDays(cur, 1);
+    }
+  }
+  return cols;
+}
+
+function getXForDate(date, cols, cw) {
+  const d = (typeof date === 'string') ? parseDate(date) : date;
+  for (let i = 0; i < cols.length; i++) {
+    if (d >= cols[i].start && d <= cols[i].end) {
+      const totalDays = daysBetween(cols[i].start, cols[i].end) + 1;
+      const off = daysBetween(cols[i].start, d);
+      return i * cw + (off / totalDays) * cw;
+    }
+  }
+  if (d < cols[0].start) return 0;
+  return cols.length * cw;
+}
+
+function getDateForX(x, cols, cw) {
+  const ci = Math.floor(x / cw);
+  if (ci < 0) return new Date(cols[0].start);
+  if (ci >= cols.length) return new Date(cols[cols.length-1].end);
+  const col = cols[ci];
+  const off = x - ci * cw;
+  const totalDays = daysBetween(col.start, col.end) + 1;
+  const dayOff = Math.round((off / cw) * (totalDays - 1));
+  return addDays(col.start, Math.max(0, Math.min(dayOff, totalDays - 1)));
+}
+
+// ===== Rendering =====
+function render() {
+  const sd = viewRange ? viewRange.start : state.startDate;
+  const ed = viewRange ? viewRange.end : state.endDate;
+  columns = generateColumns(sd, ed, state.timeUnit);
+
+  // In view mode, fit to container
+  const bodyScroll = document.getElementById('gantt-body-scroll');
+  if (appMode === 'view' && viewRange) {
+    const avail = bodyScroll.clientWidth || (window.innerWidth - parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-width')) - 30);
+    colWidth = Math.max(30, Math.floor(avail / columns.length));
+  } else {
+    colWidth = state.timeUnit === 'day' ? 36 : (state.timeUnit === 'week' ? 52 : 80);
+  }
+
+  document.documentElement.style.setProperty('--col-width', colWidth + 'px');
+  document.documentElement.style.setProperty('--font-size', state.fontSize + 'px');
+
+  renderHeader();
+  renderSidebar();
+  renderBody();
+  renderItems();
+  renderThunderLine();
+}
+
+function renderHeader() {
+  const hdr = document.getElementById('gantt-header');
+  hdr.innerHTML = '';
+  hdr.style.width = (columns.length * colWidth) + 'px';
+  let prevYear = null;
+  columns.forEach((col, i) => {
+    const cell = document.createElement('div');
+    cell.className = 'header-cell';
+    if (col.year !== prevYear && i > 0) cell.classList.add('year-start');
+    cell.style.flexBasis = colWidth + 'px';
+    cell.style.minWidth = colWidth + 'px';
+    let lbl = col.label;
+    if (col.year !== prevYear) {
+      if (state.timeUnit === 'month') lbl = col.year + '/' + lbl;
+      prevYear = col.year;
+    }
+    cell.textContent = lbl;
+    hdr.appendChild(cell);
+  });
+}
+
+function renderSidebar() {
+  const sb = document.getElementById('gantt-sidebar');
+  sb.innerHTML = '';
+  state.rows.forEach((row, ri) => {
+    const div = document.createElement('div');
+    div.className = 'sidebar-row';
+    const nameEl = document.createElement('span');
+    nameEl.className = 'sidebar-name';
+    nameEl.textContent = row.name;
+    nameEl.contentEditable = appMode === 'edit';
+    nameEl.addEventListener('blur', () => { state.rows[ri].name = nameEl.textContent.trim() || '(未設定)'; });
+    nameEl.addEventListener('keydown', e => { if(e.key==='Enter'){e.preventDefault();nameEl.blur();} });
+    div.appendChild(nameEl);
+    if (appMode === 'edit') {
+      const btns = document.createElement('div');
+      btns.className = 'sidebar-btns';
+      const btnDel = document.createElement('button');
+      btnDel.textContent = '×';
+      btnDel.title = '行削除';
+      btnDel.onclick = () => { if(state.rows.length>1){state.rows.splice(ri,1);selectedItems=[];render();} };
+      const btnUp = document.createElement('button');
+      btnUp.textContent = '↑';
+      btnUp.title = '上に行追加';
+      btnUp.onclick = () => { state.rows.splice(ri,0,{name:'新規作業',items:[]});render(); };
+      btns.appendChild(btnUp);
+      btns.appendChild(btnDel);
+      div.appendChild(btns);
+    }
+    sb.appendChild(div);
+  });
+}
+
+function renderBody() {
+  const grid = document.getElementById('grid-layer');
+  grid.innerHTML = '';
+  const totalW = columns.length * colWidth;
+  const totalH = state.rows.length * parseInt(getComputedStyle(document.documentElement).getPropertyValue('--row-height'));
+  const body = document.getElementById('gantt-body');
+  body.style.width = totalW + 'px';
+  body.style.height = totalH + 'px';
+  let prevYear = null;
+  state.rows.forEach((row, ri) => {
+    const rowDiv = document.createElement('div');
+    rowDiv.className = 'body-row';
+    prevYear = null;
+    columns.forEach((col, ci) => {
+      const cell = document.createElement('div');
+      cell.className = 'body-cell';
+      cell.style.flexBasis = colWidth + 'px';
+      cell.style.minWidth = colWidth + 'px';
+      if (col.year !== prevYear && ci > 0) cell.classList.add('year-start');
+      prevYear = col.year;
+      rowDiv.appendChild(cell);
+    });
+    grid.appendChild(rowDiv);
+  });
+}
+
+function renderItems() {
+  const layer = document.getElementById('items-layer');
+  layer.innerHTML = '';
+  const rh = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--row-height'));
+  const bh = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--bar-height'));
+
+  state.rows.forEach((row, ri) => {
+    row.items.forEach((item, ii) => {
+      if (item.type === 'task') {
+        renderTask(layer, item, ri, ii, rh, bh);
+      } else if (item.type === 'milestone') {
+        renderMilestone(layer, item, ri, ii, rh);
+      }
+    });
+  });
+}
+
+function renderTask(layer, item, ri, ii, rh, bh) {
+  const x1 = getXForDate(item.startDate, columns, colWidth);
+  const x2 = getXForDate(item.endDate, columns, colWidth);
+  if (x2 < 0 || x1 > columns.length * colWidth) return;
+  const w = Math.max(x2 - x1, 6);
+  const top = ri * rh + (rh - bh) / 2;
+
+  const el = document.createElement('div');
+  el.className = 'gantt-item gantt-task';
+  if (isSelected(ri, ii)) el.classList.add('selected');
+  el.style.left = x1 + 'px';
+  el.style.top = top + 'px';
+  el.style.width = w + 'px';
+  el.style.background = item.color || COLORS[0];
+  el.textContent = item.label || '';
+  el.title = `${item.label || ''}\n${item.startDate} 〜 ${item.endDate}`;
+
+  if (appMode === 'edit') {
+    const lHandle = document.createElement('div');
+    lHandle.className = 'resize-handle left';
+    lHandle.addEventListener('mousedown', e => startResize(e, ri, ii, 'left'));
+    el.appendChild(lHandle);
+    const rHandle = document.createElement('div');
+    rHandle.className = 'resize-handle right';
+    rHandle.addEventListener('mousedown', e => startResize(e, ri, ii, 'right'));
+    el.appendChild(rHandle);
+
+    el.addEventListener('mousedown', e => {
+      if (e.target.classList.contains('resize-handle')) return;
+      onItemMouseDown(e, ri, ii);
+    });
+    el.addEventListener('dblclick', () => editItemDialog(ri, ii));
+  }
+  layer.appendChild(el);
+}
+
+function renderMilestone(layer, item, ri, ii, rh) {
+  const x = getXForDate(item.date, columns, colWidth);
+  if (x < 0 || x > columns.length * colWidth) return;
+  const top = ri * rh + rh / 2;
+
+  const el = document.createElement('div');
+  el.className = 'gantt-item gantt-milestone';
+  if (isSelected(ri, ii)) el.classList.add('selected');
+  el.style.top = (top - 12) + 'px';
+  el.title = `${item.label || ''}\n${item.date}`;
+
+  const pos = item.labelPosition || 'after';
+  if (pos === 'before') {
+    const lbl = document.createElement('span');
+    lbl.className = 'milestone-label';
+    lbl.textContent = item.label || '';
+    el.appendChild(lbl);
+  }
+  const mark = document.createElement('span');
+  mark.className = 'milestone-mark';
+  mark.textContent = '▽';
+  el.appendChild(mark);
+  if (pos === 'after') {
+    const lbl = document.createElement('span');
+    lbl.className = 'milestone-label';
+    lbl.textContent = item.label || '';
+    el.appendChild(lbl);
+  }
+
+  // Position: center the mark on x
+  el.style.left = (x - 8) + 'px';
+
+  if (appMode === 'edit') {
+    el.addEventListener('mousedown', e => onItemMouseDown(e, ri, ii));
+    el.addEventListener('dblclick', () => editItemDialog(ri, ii));
+  }
+  layer.appendChild(el);
+}
+
+function renderThunderLine() {
+  const svg = document.getElementById('thunder-svg');
+  const rh = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--row-height'));
+  const totalW = columns.length * colWidth;
+  const totalH = state.rows.length * rh;
+  svg.setAttribute('width', totalW);
+  svg.setAttribute('height', totalH);
+  svg.innerHTML = '';
+
+  if (!state.thunderLine.visible || state.thunderLine.points.length === 0) return;
+
+  const pts = [...state.thunderLine.points].sort((a, b) => a.rowIndex - b.rowIndex);
+  const coords = pts.map(p => ({
+    x: getXForDate(p.date, columns, colWidth),
+    y: p.rowIndex * rh + rh / 2,
+    ri: p.rowIndex
+  }));
+
+  // Lines
+  for (let i = 0; i < coords.length - 1; i++) {
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', coords[i].x);
+    line.setAttribute('y1', coords[i].y);
+    line.setAttribute('x2', coords[i+1].x);
+    line.setAttribute('y2', coords[i+1].y);
+    line.setAttribute('stroke', '#d32f2f');
+    line.setAttribute('stroke-width', '2');
+    svg.appendChild(line);
+  }
+
+  // Dots
+  coords.forEach((c, i) => {
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    circle.setAttribute('cx', c.x);
+    circle.setAttribute('cy', c.y);
+    circle.setAttribute('r', '5');
+    circle.setAttribute('fill', '#d32f2f');
+    circle.classList.add('thunder-dot');
+    if (appMode === 'edit') {
+      circle.addEventListener('contextmenu', e => {
+        e.preventDefault(); e.stopPropagation();
+        showContextMenu(e.clientX, e.clientY, [
+          { label: 'カミナリ点を削除', action: () => { state.thunderLine.points.splice(i, 1); render(); } }
+        ]);
+      });
+    }
+    svg.appendChild(circle);
+  });
+}
+
+// ===== Selection =====
+function isSelected(ri, ii) {
+  return selectedItems.some(s => s.rowIndex === ri && s.itemIndex === ii);
+}
+
+function clearSelection() { selectedItems = []; }
+
+function toggleSelect(ri, ii, multi) {
+  const idx = selectedItems.findIndex(s => s.rowIndex === ri && s.itemIndex === ii);
+  if (multi) {
+    if (idx >= 0) selectedItems.splice(idx, 1);
+    else selectedItems.push({ rowIndex: ri, itemIndex: ii });
+  } else {
+    if (idx >= 0 && selectedItems.length === 1) { /* already solo selected */ }
+    else { selectedItems = [{ rowIndex: ri, itemIndex: ii }]; }
+  }
+}
+
+// ===== Drag & Resize =====
+function onItemMouseDown(e, ri, ii) {
+  if (e.button !== 0) return;
+  e.stopPropagation();
+  const wasSelected = isSelected(ri, ii);
+  toggleSelect(ri, ii, e.ctrlKey || e.metaKey);
+  if (!isSelected(ri, ii)) { render(); return; }
+  render();
+
+  const bodyScroll = document.getElementById('gantt-body-scroll');
+  const rect = document.getElementById('gantt-body').getBoundingClientRect();
+  const startX = e.clientX;
+  const startScrollLeft = bodyScroll.scrollLeft;
+
+  // Record original dates
+  const originals = selectedItems.map(s => {
+    const item = state.rows[s.rowIndex].items[s.itemIndex];
+    if (item.type === 'task') return { startDate: item.startDate, endDate: item.endDate };
+    return { date: item.date };
+  });
+
+  let moved = false;
+
+  function onMove(ev) {
+    const dx = ev.clientX - startX;
+    if (Math.abs(dx) < 3 && !moved) return;
+    moved = true;
+    const scrollDelta = bodyScroll.scrollLeft - startScrollLeft;
+    const startDate = getDateForX((startX - rect.left + startScrollLeft), columns, colWidth);
+    const curDate = getDateForX((ev.clientX - rect.left + bodyScroll.scrollLeft), columns, colWidth);
+    const dayOffset = daysBetween(startDate, curDate);
+
+    selectedItems.forEach((s, i) => {
+      const item = state.rows[s.rowIndex].items[s.itemIndex];
+      const orig = originals[i];
+      if (item.type === 'task') {
+        item.startDate = fmtDate(addDays(parseDate(orig.startDate), dayOffset));
+        item.endDate = fmtDate(addDays(parseDate(orig.endDate), dayOffset));
+      } else {
+        item.date = fmtDate(addDays(parseDate(orig.date), dayOffset));
+      }
+    });
+    renderItems();
+    renderThunderLine();
+  }
+
+  function onUp() {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    if (moved) render();
+  }
+
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+}
+
+function startResize(e, ri, ii, side) {
+  e.preventDefault(); e.stopPropagation();
+  const item = state.rows[ri].items[ii];
+  if (item.type !== 'task') return;
+
+  const bodyScroll = document.getElementById('gantt-body-scroll');
+  const rect = document.getElementById('gantt-body').getBoundingClientRect();
+  const origStart = item.startDate, origEnd = item.endDate;
+
+  function onMove(ev) {
+    const curDate = getDateForX(ev.clientX - rect.left + bodyScroll.scrollLeft, columns, colWidth);
+    if (side === 'left') {
+      const ed = parseDate(origEnd);
+      if (curDate <= ed) item.startDate = fmtDate(curDate);
+    } else {
+      const sd = parseDate(origStart);
+      if (curDate >= sd) item.endDate = fmtDate(curDate);
+    }
+    renderItems();
+  }
+
+  function onUp() {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    render();
+  }
+
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+}
+
+// ===== Context Menu =====
+function showContextMenu(x, y, items) {
+  const menu = document.getElementById('context-menu');
+  menu.innerHTML = '';
+  items.forEach(it => {
+    if (it.sep) {
+      const s = document.createElement('div');
+      s.className = 'menu-sep';
+      menu.appendChild(s);
+    } else {
+      const d = document.createElement('div');
+      d.className = 'menu-item';
+      d.textContent = it.label;
+      d.onclick = () => { hideContextMenu(); it.action(); };
+      menu.appendChild(d);
+    }
+  });
+  menu.style.left = x + 'px';
+  menu.style.top = y + 'px';
+  menu.style.display = 'block';
+}
+
+function hideContextMenu() {
+  document.getElementById('context-menu').style.display = 'none';
+}
+
+document.addEventListener('click', e => {
+  if (!e.target.closest('#context-menu')) hideContextMenu();
+});
+
+// Body context menu
+document.addEventListener('DOMContentLoaded', () => {
+  const bodyScroll = document.getElementById('gantt-body-scroll');
+
+  bodyScroll.addEventListener('contextmenu', e => {
+    if (appMode !== 'edit') return;
+    e.preventDefault();
+    const rect = document.getElementById('gantt-body').getBoundingClientRect();
+    const rh = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--row-height'));
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const ri = Math.floor(y / rh);
+    if (ri < 0 || ri >= state.rows.length) return;
+    const clickDate = getDateForX(x, columns, colWidth);
+    const clickDateStr = fmtDate(clickDate);
+
+    const menuItems = [
+      { label: `作業を追加 (${clickDateStr})`, action: () => addTaskDialog(ri, clickDateStr) },
+      { label: `イベントを追加 (${clickDateStr})`, action: () => addMilestoneDialog(ri, clickDateStr) },
+      { sep: true },
+      { label: 'カミナリ点を追加', action: () => { addThunderPoint(ri, clickDateStr); } },
+    ];
+
+    if (selectedItems.length > 0) {
+      menuItems.push({ sep: true });
+      menuItems.push({ label: '選択項目を削除', action: () => deleteSelected() });
+    }
+
+    showContextMenu(e.clientX, e.clientY, menuItems);
+  });
+
+  bodyScroll.addEventListener('mousedown', e => {
+    if (e.button === 0 && !e.target.closest('.gantt-item') && !e.target.closest('.thunder-dot')) {
+      clearSelection();
+      render();
+    }
+  });
+
+  // Sync scroll
+  bodyScroll.addEventListener('scroll', () => {
+    document.getElementById('gantt-header-scroll').scrollLeft = bodyScroll.scrollLeft;
+    document.getElementById('gantt-sidebar-scroll').scrollTop = bodyScroll.scrollTop;
+  });
+});
+
+// ===== Thunder Line =====
+function addThunderPoint(ri, dateStr) {
+  const existing = state.thunderLine.points.findIndex(p => p.rowIndex === ri);
+  if (existing >= 0) {
+    state.thunderLine.points[existing].date = dateStr;
+  } else {
+    state.thunderLine.points.push({ rowIndex: ri, date: dateStr });
+  }
+  render();
+}
+
+function toggleThunder(visible) {
+  state.thunderLine.visible = visible;
+  render();
+}
+
+// ===== Dialogs =====
+function showModal(title, fields, onOk) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+  const h3 = document.createElement('h3');
+  h3.textContent = title;
+  modal.appendChild(h3);
+
+  const inputs = {};
+  fields.forEach(f => {
+    const div = document.createElement('div');
+    div.className = 'field';
+    const label = document.createElement('label');
+    label.textContent = f.label;
+    div.appendChild(label);
+
+    if (f.type === 'color') {
+      const container = document.createElement('div');
+      container.className = 'color-options';
+      let selected = f.value || COLORS[0];
+      COLORS.forEach(c => {
+        const opt = document.createElement('div');
+        opt.className = 'color-opt' + (c === selected ? ' selected' : '');
+        opt.style.background = c;
+        opt.onclick = () => {
+          container.querySelectorAll('.color-opt').forEach(o => o.classList.remove('selected'));
+          opt.classList.add('selected');
+          selected = c;
+          inputs[f.key] = { value: c };
+        };
+        container.appendChild(opt);
+      });
+      inputs[f.key] = { value: selected };
+      div.appendChild(container);
+    } else if (f.type === 'select') {
+      const sel = document.createElement('select');
+      f.options.forEach(o => {
+        const opt = document.createElement('option');
+        opt.value = o.value; opt.textContent = o.label;
+        if (o.value === f.value) opt.selected = true;
+        sel.appendChild(opt);
+      });
+      inputs[f.key] = sel;
+      div.appendChild(sel);
+    } else {
+      const inp = document.createElement('input');
+      inp.type = f.type || 'text';
+      inp.value = f.value || '';
+      inputs[f.key] = inp;
+      div.appendChild(inp);
+    }
+    modal.appendChild(div);
+  });
+
+  const btns = document.createElement('div');
+  btns.className = 'modal-btns';
+  const btnCancel = document.createElement('button');
+  btnCancel.textContent = 'キャンセル';
+  btnCancel.onclick = () => overlay.remove();
+  const btnOk = document.createElement('button');
+  btnOk.className = 'btn-primary';
+  btnOk.textContent = 'OK';
+  btnOk.onclick = () => {
+    const vals = {};
+    for (const k in inputs) vals[k] = inputs[k].value;
+    onOk(vals);
+    overlay.remove();
+  };
+  btns.appendChild(btnCancel);
+  btns.appendChild(btnOk);
+  modal.appendChild(btns);
+
+  overlay.appendChild(modal);
+  overlay.addEventListener('mousedown', e => { if(e.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+
+  // Focus first input
+  const firstInput = modal.querySelector('input[type="text"], input[type="date"]');
+  if (firstInput) setTimeout(() => firstInput.focus(), 50);
+}
+
+function addTaskDialog(ri, dateStr) {
+  const endDate = fmtDate(addDays(parseDate(dateStr), 30));
+  showModal('作業を追加', [
+    { key: 'label', label: 'ラベル', type: 'text', value: '' },
+    { key: 'startDate', label: '開始日', type: 'date', value: dateStr },
+    { key: 'endDate', label: '終了日', type: 'date', value: endDate },
+    { key: 'color', label: '色', type: 'color', value: COLORS[0] }
+  ], vals => {
+    if (!vals.startDate || !vals.endDate) return;
+    state.rows[ri].items.push({
+      type: 'task', startDate: vals.startDate, endDate: vals.endDate,
+      label: vals.label, color: vals.color
+    });
+    render();
+  });
+}
+
+function addMilestoneDialog(ri, dateStr) {
+  showModal('イベントを追加', [
+    { key: 'label', label: 'ラベル', type: 'text', value: '' },
+    { key: 'date', label: '日付', type: 'date', value: dateStr },
+    { key: 'labelPosition', label: 'ラベル位置', type: 'select', value: 'after',
+      options: [{ value: 'before', label: '前' }, { value: 'after', label: '後' }] }
+  ], vals => {
+    if (!vals.date) return;
+    state.rows[ri].items.push({
+      type: 'milestone', date: vals.date,
+      label: vals.label, labelPosition: vals.labelPosition
+    });
+    render();
+  });
+}
+
+function editItemDialog(ri, ii) {
+  const item = state.rows[ri].items[ii];
+  if (item.type === 'task') {
+    showModal('作業を編集', [
+      { key: 'label', label: 'ラベル', type: 'text', value: item.label },
+      { key: 'startDate', label: '開始日', type: 'date', value: item.startDate },
+      { key: 'endDate', label: '終了日', type: 'date', value: item.endDate },
+      { key: 'color', label: '色', type: 'color', value: item.color || COLORS[0] }
+    ], vals => {
+      if (!vals.startDate || !vals.endDate) return;
+      item.label = vals.label;
+      item.startDate = vals.startDate;
+      item.endDate = vals.endDate;
+      item.color = vals.color;
+      render();
+    });
+  } else {
+    showModal('イベントを編集', [
+      { key: 'label', label: 'ラベル', type: 'text', value: item.label },
+      { key: 'date', label: '日付', type: 'date', value: item.date },
+      { key: 'labelPosition', label: 'ラベル位置', type: 'select', value: item.labelPosition || 'after',
+        options: [{ value: 'before', label: '前' }, { value: 'after', label: '後' }] }
+    ], vals => {
+      if (!vals.date) return;
+      item.label = vals.label;
+      item.date = vals.date;
+      item.labelPosition = vals.labelPosition;
+      render();
+    });
+  }
+}
+
+function deleteSelected() {
+  // Delete in reverse order to maintain indices
+  const sorted = [...selectedItems].sort((a, b) => b.rowIndex - a.rowIndex || b.itemIndex - a.itemIndex);
+  sorted.forEach(s => {
+    state.rows[s.rowIndex].items.splice(s.itemIndex, 1);
+  });
+  selectedItems = [];
+  render();
+}
+
+// ===== Mode =====
+function setMode(mode) {
+  appMode = mode;
+  document.getElementById('btn-edit-mode').classList.toggle('active', mode === 'edit');
+  document.getElementById('btn-view-mode').classList.toggle('active', mode === 'view');
+  document.getElementById('edit-controls').style.display = mode === 'edit' ? '' : 'none';
+  document.getElementById('view-controls').style.display = mode === 'view' ? '' : 'none';
+  document.body.classList.toggle('edit-mode', mode === 'edit');
+  document.body.classList.toggle('view-mode', mode === 'view');
+
+  if (mode === 'view') {
+    clearSelection();
+    if (!viewRange) {
+      document.getElementById('view-start').value = state.startDate;
+      document.getElementById('view-end').value = state.endDate;
+    }
+  } else {
+    viewRange = null;
+  }
+  render();
+}
+
+// ===== Time Unit =====
+function changeUnit(unit) {
+  state.timeUnit = unit;
+  render();
+}
+
+// ===== Font Size =====
+function changeFontSize(delta) {
+  state.fontSize = Math.max(8, Math.min(24, state.fontSize + delta));
+  document.documentElement.style.setProperty('--font-size', state.fontSize + 'px');
+  render();
+}
+
+// ===== Column Add/Remove =====
+function addColumnStart() {
+  const sd = parseDate(state.startDate);
+  if (state.timeUnit === 'month') {
+    state.startDate = fmtDate(new Date(sd.getFullYear(), sd.getMonth() - 1, 1));
+  } else if (state.timeUnit === 'week') {
+    state.startDate = fmtDate(addDays(sd, -7));
+  } else {
+    state.startDate = fmtDate(addDays(sd, -1));
+  }
+  render();
+}
+
+function addColumnEnd() {
+  const ed = parseDate(state.endDate);
+  if (state.timeUnit === 'month') {
+    const next = new Date(ed.getFullYear(), ed.getMonth() + 1, 1);
+    state.endDate = fmtDate(monthEnd(next));
+  } else if (state.timeUnit === 'week') {
+    state.endDate = fmtDate(addDays(ed, 7));
+  } else {
+    state.endDate = fmtDate(addDays(ed, 1));
+  }
+  render();
+}
+
+function removeColumnStart() {
+  const sd = parseDate(state.startDate);
+  let newStart;
+  if (state.timeUnit === 'month') {
+    newStart = new Date(sd.getFullYear(), sd.getMonth() + 1, 1);
+  } else if (state.timeUnit === 'week') {
+    newStart = addDays(sd, 7);
+  } else {
+    newStart = addDays(sd, 1);
+  }
+  if (newStart < parseDate(state.endDate)) {
+    state.startDate = fmtDate(newStart);
+    render();
+  }
+}
+
+function removeColumnEnd() {
+  const ed = parseDate(state.endDate);
+  let newEnd;
+  if (state.timeUnit === 'month') {
+    newEnd = new Date(ed.getFullYear(), ed.getMonth(), 0);
+  } else if (state.timeUnit === 'week') {
+    newEnd = addDays(ed, -7);
+  } else {
+    newEnd = addDays(ed, -1);
+  }
+  if (newEnd > parseDate(state.startDate)) {
+    state.endDate = fmtDate(newEnd);
+    render();
+  }
+}
+
+// ===== Row =====
+function addRow() {
+  state.rows.push({ name: '新規作業', items: [] });
+  render();
+}
+
+// ===== View Range =====
+function applyViewRange() {
+  const vs = document.getElementById('view-start').value;
+  const ve = document.getElementById('view-end').value;
+  if (vs && ve && vs <= ve) {
+    viewRange = { start: vs, end: ve };
+    render();
+  }
+}
+
+function clearViewRange() {
+  viewRange = null;
+  document.getElementById('view-start').value = state.startDate;
+  document.getElementById('view-end').value = state.endDate;
+  render();
+}
+
+// ===== Export / Import =====
+function exportJSON() {
+  const json = JSON.stringify(state, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'gantt_chart.json';
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('エクスポートしました');
+}
+
+function importJSON() {
+  document.getElementById('file-input').click();
+}
+
+function handleFileImport(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (data.rows && data.startDate && data.endDate) {
+        state = data;
+        if (!state.thunderLine) state.thunderLine = { visible: true, points: [] };
+        if (!state.fontSize) state.fontSize = 14;
+        document.getElementById('sel-unit').value = state.timeUnit || 'month';
+        document.getElementById('chk-thunder').checked = state.thunderLine.visible;
+        selectedItems = [];
+        viewRange = null;
+        render();
+        showToast('インポートしました');
+      } else {
+        alert('無効なファイル形式です。');
+      }
+    } catch (err) {
+      alert('JSONの読み込みに失敗しました: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+  event.target.value = '';
+}
+
+// ===== Image Copy =====
+async function copyAsImage() {
+  const canvas = renderToCanvas();
+  try {
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+    showToast('画像をクリップボードにコピーしました');
+  } catch (err) {
+    // Fallback: download
+    canvas.toBlob(blob => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'gantt_chart.png'; a.click();
+      URL.revokeObjectURL(url);
+      showToast('画像をダウンロードしました');
+    });
+  }
+}
+
+function renderToCanvas() {
+  const rh = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--row-height'));
+  const bh = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--bar-height'));
+  const sw = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-width'));
+  const hh = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--header-height'));
+  const fs = state.fontSize;
+
+  const totalW = columns.length * colWidth + sw;
+  const totalH = state.rows.length * rh + hh;
+
+  const dpr = window.devicePixelRatio || 1;
+  const canvas = document.createElement('canvas');
+  canvas.width = totalW * dpr;
+  canvas.height = totalH * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  // Background
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, totalW, totalH);
+
+  // Header background
+  ctx.fillStyle = '#f0f4f8';
+  ctx.fillRect(0, 0, totalW, hh);
+
+  // Corner
+  ctx.fillStyle = '#666';
+  ctx.font = `bold ${fs * 0.85}px sans-serif`;
+  ctx.textBaseline = 'middle';
+  ctx.fillText('タスク名', 8, hh / 2);
+
+  // Header labels
+  ctx.font = `600 ${fs * 0.85}px sans-serif`;
+  ctx.fillStyle = '#555';
+  let prevYear = null;
+  columns.forEach((col, i) => {
+    const x = sw + i * colWidth;
+    // grid line
+    ctx.strokeStyle = '#d0d0d0';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, totalH); ctx.stroke();
+    let lbl = col.label;
+    if (col.year !== prevYear) {
+      if (state.timeUnit === 'month') lbl = col.year + '/' + lbl;
+      prevYear = col.year;
+    }
+    ctx.fillStyle = '#555';
+    ctx.fillText(lbl, x + 4, hh / 2 + 4);
+  });
+
+  // Header bottom line
+  ctx.strokeStyle = '#bbb';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(0, hh); ctx.lineTo(totalW, hh); ctx.stroke();
+
+  // Sidebar border
+  ctx.beginPath(); ctx.moveTo(sw, 0); ctx.lineTo(sw, totalH); ctx.stroke();
+
+  // Rows
+  state.rows.forEach((row, ri) => {
+    const y = hh + ri * rh;
+
+    // Row background
+    ctx.fillStyle = ri % 2 === 0 ? '#fafbfc' : '#fff';
+    ctx.fillRect(0, y, totalW, rh);
+
+    // Row border
+    ctx.strokeStyle = '#d0d0d0';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, y + rh); ctx.lineTo(totalW, y + rh); ctx.stroke();
+
+    // Row name
+    ctx.fillStyle = '#333';
+    ctx.font = `${fs}px sans-serif`;
+    ctx.textBaseline = 'middle';
+    ctx.fillText(row.name, 8, y + rh / 2, sw - 16);
+
+    // Items
+    row.items.forEach(item => {
+      if (item.type === 'task') {
+        const x1 = sw + getXForDate(item.startDate, columns, colWidth);
+        const x2 = sw + getXForDate(item.endDate, columns, colWidth);
+        const w = Math.max(x2 - x1, 4);
+        const barY = y + (rh - bh) / 2;
+
+        ctx.fillStyle = item.color || COLORS[0];
+        roundRect(ctx, x1, barY, w, bh, 4);
+        ctx.fill();
+
+        // Shadow
+        ctx.shadowColor = 'rgba(0,0,0,.15)';
+        ctx.shadowBlur = 3;
+        ctx.shadowOffsetY = 1;
+        roundRect(ctx, x1, barY, w, bh, 4);
+        ctx.fill();
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetY = 0;
+
+        if (item.label) {
+          ctx.fillStyle = '#fff';
+          ctx.font = `${fs * 0.8}px sans-serif`;
+          ctx.textBaseline = 'middle';
+          const tw = ctx.measureText(item.label).width;
+          if (tw < w - 8) {
+            ctx.fillText(item.label, x1 + (w - tw) / 2, barY + bh / 2);
+          }
+        }
+      } else if (item.type === 'milestone') {
+        const x = sw + getXForDate(item.date, columns, colWidth);
+        const my = y + rh / 2;
+        ctx.fillStyle = '#d32f2f';
+        ctx.font = `${fs * 1.3}px sans-serif`;
+        ctx.textBaseline = 'middle';
+        const markW = ctx.measureText('▽').width;
+        ctx.fillText('▽', x - markW / 2, my);
+
+        if (item.label) {
+          ctx.fillStyle = '#333';
+          ctx.font = `${fs * 0.8}px sans-serif`;
+          if (item.labelPosition === 'before') {
+            const lw = ctx.measureText(item.label).width;
+            ctx.fillText(item.label, x - markW / 2 - lw - 4, my);
+          } else {
+            ctx.fillText(item.label, x + markW / 2 + 4, my);
+          }
+        }
+      }
+    });
+  });
+
+  // Thunder line
+  if (state.thunderLine.visible && state.thunderLine.points.length > 0) {
+    const pts = [...state.thunderLine.points].sort((a, b) => a.rowIndex - b.rowIndex);
+    const coords = pts.map(p => ({
+      x: sw + getXForDate(p.date, columns, colWidth),
+      y: hh + p.rowIndex * rh + rh / 2
+    }));
+
+    ctx.strokeStyle = '#d32f2f';
+    ctx.lineWidth = 2;
+    for (let i = 0; i < coords.length - 1; i++) {
+      ctx.beginPath();
+      ctx.moveTo(coords[i].x, coords[i].y);
+      ctx.lineTo(coords[i + 1].x, coords[i + 1].y);
+      ctx.stroke();
+    }
+
+    coords.forEach(c => {
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, 5, 0, Math.PI * 2);
+      ctx.fillStyle = '#d32f2f';
+      ctx.fill();
+    });
+  }
+
+  return canvas;
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+// ===== Toast =====
+function showToast(msg) {
+  const toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.style.display = 'block';
+  setTimeout(() => { toast.style.display = 'none'; }, 2000);
+}
+
+// ===== Init =====
+document.addEventListener('DOMContentLoaded', () => {
+  document.body.classList.add('edit-mode');
+  render();
+});
+
+// Keyboard
+document.addEventListener('keydown', e => {
+  if (e.key === 'Delete' || e.key === 'Backspace') {
+    if (appMode === 'edit' && selectedItems.length > 0 && !document.querySelector('.modal-overlay') && document.activeElement.tagName !== 'INPUT' && !document.activeElement.isContentEditable) {
+      e.preventDefault();
+      deleteSelected();
+    }
+  }
+  if (e.key === 'Escape') {
+    hideContextMenu();
+    const overlay = document.querySelector('.modal-overlay');
+    if (overlay) overlay.remove();
+    if (selectedItems.length > 0) { clearSelection(); render(); }
+  }
+});
+</script>
+</body>
+</html>
