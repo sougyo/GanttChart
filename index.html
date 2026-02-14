@@ -224,6 +224,12 @@ body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; font-size
   background: #333; color: #fff; padding: 10px 24px; border-radius: 6px;
   font-size: 0.9em; z-index: 400; display: none; box-shadow: 0 4px 12px rgba(0,0,0,.3);
 }
+#drag-tooltip {
+  position: fixed; pointer-events: none; z-index: 500;
+  background: rgba(0,0,0,.8); color: #fff; padding: 3px 8px; border-radius: 4px;
+  font-size: 12px; white-space: nowrap; display: none;
+  transform: translate(-50%, -130%);
+}
 </style>
 </head>
 <body>
@@ -293,6 +299,7 @@ body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; font-size
 
 <div id="context-menu"></div>
 <div id="toast"></div>
+<div id="drag-tooltip"></div>
 <input type="file" id="file-input" accept=".json" style="display:none" onchange="handleFileImport(event)">
 
 <script>
@@ -783,6 +790,24 @@ function toggleSelect(ri, ii, multi) {
   }
 }
 
+// ===== Drag Tooltip =====
+function showDragTooltip(ev, text) {
+  const tip = document.getElementById('drag-tooltip');
+  tip.textContent = text;
+  tip.style.left = ev.clientX + 'px';
+  tip.style.top = ev.clientY + 'px';
+  tip.style.display = 'block';
+}
+
+function hideDragTooltip() {
+  document.getElementById('drag-tooltip').style.display = 'none';
+}
+
+function formatDateLabel(d) {
+  if (typeof d === 'string') d = parseDate(d);
+  return `${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()}`;
+}
+
 // ===== Drag & Resize =====
 function onItemMouseDown(e, ri, ii) {
   if (e.button !== 0) return;
@@ -824,6 +849,15 @@ function onItemMouseDown(e, ri, ii) {
         item.date = fmtDate(addDays(parseDate(orig.date), dayOffset));
       }
     });
+
+    // Show tooltip with current date(s)
+    const first = state.rows[selectedItems[0].rowIndex].items[selectedItems[0].itemIndex];
+    if (first.type === 'task') {
+      showDragTooltip(ev, `${formatDateLabel(first.startDate)} 〜 ${formatDateLabel(first.endDate)}`);
+    } else {
+      showDragTooltip(ev, formatDateLabel(first.date));
+    }
+
     renderItems();
     renderThunderLine();
   }
@@ -831,6 +865,7 @@ function onItemMouseDown(e, ri, ii) {
   function onUp() {
     document.removeEventListener('mousemove', onMove);
     document.removeEventListener('mouseup', onUp);
+    hideDragTooltip();
     if (moved) render();
   }
 
@@ -853,11 +888,13 @@ function startResize(e, ri, ii, side) {
       const curDate = getDateForX(mx, columns, colWidth);
       const ed = parseDate(origEnd);
       if (curDate <= ed) item.startDate = fmtDate(curDate);
+      showDragTooltip(ev, formatDateLabel(item.startDate));
     } else {
       // Right edge: subtract 1px so getDateForX returns the cell the edge belongs to
       const curDate = getDateForX(Math.max(0, mx - 1), columns, colWidth);
       const sd = parseDate(origStart);
       if (curDate >= sd) item.endDate = fmtDate(curDate);
+      showDragTooltip(ev, formatDateLabel(item.endDate));
     }
     renderItems();
   }
@@ -865,6 +902,7 @@ function startResize(e, ri, ii, side) {
   function onUp() {
     document.removeEventListener('mousemove', onMove);
     document.removeEventListener('mouseup', onUp);
+    hideDragTooltip();
     render();
   }
 
