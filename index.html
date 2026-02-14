@@ -359,18 +359,37 @@ function generateColumns(start, end, unit) {
   return cols;
 }
 
+// Returns the LEFT edge position of the given date's slot within its column
 function getXForDate(date, cols, cw) {
   const d = (typeof date === 'string') ? parseDate(date) : date;
   for (let i = 0; i < cols.length; i++) {
     if (d >= cols[i].start && d <= cols[i].end) {
       const totalDays = daysBetween(cols[i].start, cols[i].end) + 1;
-      if (totalDays <= 1) return i * cw + cw / 2; // center in cell for day-unit
       const off = daysBetween(cols[i].start, d);
-      return i * cw + (off / (totalDays - 1)) * cw;
+      return i * cw + (off / totalDays) * cw;
     }
   }
   if (d < cols[0].start) return 0;
   return cols.length * cw;
+}
+
+// Returns the RIGHT edge position of the given date's slot
+function getXForDateEnd(date, cols, cw) {
+  const d = (typeof date === 'string') ? parseDate(date) : date;
+  for (let i = 0; i < cols.length; i++) {
+    if (d >= cols[i].start && d <= cols[i].end) {
+      const totalDays = daysBetween(cols[i].start, cols[i].end) + 1;
+      const off = daysBetween(cols[i].start, d);
+      return i * cw + ((off + 1) / totalDays) * cw;
+    }
+  }
+  if (d < cols[0].start) return 0;
+  return cols.length * cw;
+}
+
+// Returns the CENTER position of the given date's slot (for milestones, thunder points)
+function getXForDateCenter(date, cols, cw) {
+  return (getXForDate(date, cols, cw) + getXForDateEnd(date, cols, cw)) / 2;
 }
 
 function getDateForX(x, cols, cw) {
@@ -380,7 +399,7 @@ function getDateForX(x, cols, cw) {
   const col = cols[ci];
   const off = x - ci * cw;
   const totalDays = daysBetween(col.start, col.end) + 1;
-  const dayOff = Math.round((off / cw) * (totalDays - 1));
+  const dayOff = Math.floor((off / cw) * totalDays);
   return addDays(col.start, Math.max(0, Math.min(dayOff, totalDays - 1)));
 }
 
@@ -507,7 +526,7 @@ function renderItems() {
 
 function renderTask(layer, item, ri, ii, rh, bh) {
   const x1 = getXForDate(item.startDate, columns, colWidth);
-  const x2 = getXForDate(item.endDate, columns, colWidth);
+  const x2 = getXForDateEnd(item.endDate, columns, colWidth);
   if (x2 < 0 || x1 > columns.length * colWidth) return;
   const w = Math.max(x2 - x1, 6);
   const top = ri * rh + (rh - bh) / 2;
@@ -559,7 +578,7 @@ function renderTask(layer, item, ri, ii, rh, bh) {
 }
 
 function renderMilestone(layer, item, ri, ii, rh) {
-  const x = getXForDate(item.date, columns, colWidth);
+  const x = getXForDateCenter(item.date, columns, colWidth);
   if (x < 0 || x > columns.length * colWidth) return;
   const top = ri * rh + rh / 2;
 
@@ -643,26 +662,41 @@ function renderThunderLine() {
   svg.setAttribute('height', totalH);
   svg.innerHTML = '';
 
-  if (!state.thunderLine.visible) return;
+  if (!state.thunderLine.visible || state.rows.length === 0) return;
 
   const pts = getThunderPointsForRender();
   const coords = pts.map(p => ({
-    x: getXForDate(p.date, columns, colWidth),
+    x: getXForDateCenter(p.date, columns, colWidth),
     y: p.rowIndex * rh + rh / 2,
     explicit: p.explicit,
-    explicitIndex: p.explicitIndex
+    explicitIndex: p.explicitIndex,
+    rowIndex: p.rowIndex
   }));
 
-  // Lines
-  for (let i = 0; i < coords.length - 1; i++) {
-    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-    line.setAttribute('x1', coords[i].x);
-    line.setAttribute('y1', coords[i].y);
-    line.setAttribute('x2', coords[i+1].x);
-    line.setAttribute('y2', coords[i+1].y);
-    line.setAttribute('stroke', '#d32f2f');
-    line.setAttribute('stroke-width', '2');
-    svg.appendChild(line);
+  // Build polyline path:
+  // Row boundary points are at x = default date position.
+  // Row center points are at x = each row's specified date position.
+  // Lines go diagonally between boundary points and center points:
+  //   (defaultX, boundary_top) → diagonal → (xi, center_i) → diagonal → (defaultX, boundary_bottom)
+  if (coords.length > 0) {
+    const defX = getXForDateCenter(state.thunderLine.defaultDate || fmtDate(new Date()), columns, colWidth);
+    const pathParts = [];
+    // Start: top of first row at default x
+    pathParts.push(`${defX},${0}`);
+    for (let i = 0; i < coords.length; i++) {
+      // Diagonal to row center point
+      pathParts.push(`${coords[i].x},${coords[i].y}`);
+      // Diagonal to boundary below this row at default x
+      const boundaryY = (coords[i].rowIndex + 1) * rh;
+      pathParts.push(`${defX},${boundaryY}`);
+    }
+
+    const polyline = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+    polyline.setAttribute('points', pathParts.join(' '));
+    polyline.setAttribute('stroke', '#d32f2f');
+    polyline.setAttribute('stroke-width', '2');
+    polyline.setAttribute('fill', 'none');
+    svg.appendChild(polyline);
   }
 
   // Dots
@@ -759,9 +793,8 @@ function onItemMouseDown(e, ri, ii) {
   render();
 
   const bodyScroll = document.getElementById('gantt-body-scroll');
-  const rect = document.getElementById('gantt-body').getBoundingClientRect();
-  const startX = e.clientX;
-  const startScrollLeft = bodyScroll.scrollLeft;
+  const scrollRect = bodyScroll.getBoundingClientRect();
+  const startBodyX = e.clientX - scrollRect.left + bodyScroll.scrollLeft;
 
   // Record original dates
   const originals = selectedItems.map(s => {
@@ -773,12 +806,12 @@ function onItemMouseDown(e, ri, ii) {
   let moved = false;
 
   function onMove(ev) {
-    const dx = ev.clientX - startX;
+    const dx = ev.clientX - e.clientX;
     if (Math.abs(dx) < 3 && !moved) return;
     moved = true;
-    const scrollDelta = bodyScroll.scrollLeft - startScrollLeft;
-    const startDate = getDateForX((startX - rect.left + startScrollLeft), columns, colWidth);
-    const curDate = getDateForX((ev.clientX - rect.left + bodyScroll.scrollLeft), columns, colWidth);
+    const curBodyX = ev.clientX - scrollRect.left + bodyScroll.scrollLeft;
+    const startDate = getDateForX(startBodyX, columns, colWidth);
+    const curDate = getDateForX(curBodyX, columns, colWidth);
     const dayOffset = daysBetween(startDate, curDate);
 
     selectedItems.forEach((s, i) => {
@@ -811,15 +844,18 @@ function startResize(e, ri, ii, side) {
   if (item.type !== 'task') return;
 
   const bodyScroll = document.getElementById('gantt-body-scroll');
-  const rect = document.getElementById('gantt-body').getBoundingClientRect();
+  const scrollRect = bodyScroll.getBoundingClientRect();
   const origStart = item.startDate, origEnd = item.endDate;
 
   function onMove(ev) {
-    const curDate = getDateForX(ev.clientX - rect.left + bodyScroll.scrollLeft, columns, colWidth);
+    const mx = ev.clientX - scrollRect.left + bodyScroll.scrollLeft;
     if (side === 'left') {
+      const curDate = getDateForX(mx, columns, colWidth);
       const ed = parseDate(origEnd);
       if (curDate <= ed) item.startDate = fmtDate(curDate);
     } else {
+      // Right edge: subtract 1px so getDateForX returns the cell the edge belongs to
+      const curDate = getDateForX(Math.max(0, mx - 1), columns, colWidth);
       const sd = parseDate(origStart);
       if (curDate >= sd) item.endDate = fmtDate(curDate);
     }
@@ -1353,7 +1389,7 @@ function renderToCanvas() {
     row.items.forEach(item => {
       if (item.type === 'task') {
         const x1 = sw + getXForDate(item.startDate, columns, colWidth);
-        const x2 = sw + getXForDate(item.endDate, columns, colWidth);
+        const x2 = sw + getXForDateEnd(item.endDate, columns, colWidth);
         const w = Math.max(x2 - x1, 4);
         const barY = y + (rh - bh) / 2;
 
@@ -1381,7 +1417,7 @@ function renderToCanvas() {
           }
         }
       } else if (item.type === 'milestone') {
-        const x = sw + getXForDate(item.date, columns, colWidth);
+        const x = sw + getXForDateCenter(item.date, columns, colWidth);
         const my = y + rh / 2;
         ctx.fillStyle = '#d32f2f';
         ctx.font = `${fs * 1.3}px sans-serif`;
@@ -1404,20 +1440,27 @@ function renderToCanvas() {
   });
 
   // Thunder line
-  if (state.thunderLine.visible) {
+  if (state.thunderLine.visible && state.rows.length > 0) {
     const pts = getThunderPointsForRender();
     const coords = pts.map(p => ({
-      x: sw + getXForDate(p.date, columns, colWidth),
+      x: sw + getXForDateCenter(p.date, columns, colWidth),
       y: hh + p.rowIndex * rh + rh / 2,
-      explicit: p.explicit
+      explicit: p.explicit,
+      rowIndex: p.rowIndex
     }));
 
-    ctx.strokeStyle = '#d32f2f';
-    ctx.lineWidth = 2;
-    for (let i = 0; i < coords.length - 1; i++) {
+    // Draw zigzag: boundary(defaultX) → diagonal → center(xi) → diagonal → boundary(defaultX)
+    if (coords.length > 0) {
+      const defX = sw + getXForDateCenter(state.thunderLine.defaultDate || fmtDate(new Date()), columns, colWidth);
+      ctx.strokeStyle = '#d32f2f';
+      ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.moveTo(coords[i].x, coords[i].y);
-      ctx.lineTo(coords[i + 1].x, coords[i + 1].y);
+      ctx.moveTo(defX, hh);
+      for (let i = 0; i < coords.length; i++) {
+        ctx.lineTo(coords[i].x, coords[i].y);
+        const boundaryY = hh + (coords[i].rowIndex + 1) * rh;
+        ctx.lineTo(defX, boundaryY);
+      }
       ctx.stroke();
     }
 
