@@ -813,8 +813,17 @@ function onItemMouseDown(e, ri, ii) {
   if (e.button !== 0) return;
   e.stopPropagation();
   const wasSelected = isSelected(ri, ii);
-  toggleSelect(ri, ii, e.ctrlKey || e.metaKey);
-  if (!isSelected(ri, ii)) { render(); return; }
+  const multi = e.ctrlKey || e.metaKey;
+
+  if (multi) {
+    // Ctrl+click: toggle this item in/out of selection
+    toggleSelect(ri, ii, true);
+    if (!isSelected(ri, ii)) { render(); return; }
+  } else if (!wasSelected) {
+    // Click on unselected item without Ctrl: select only this one
+    selectedItems = [{ rowIndex: ri, itemIndex: ii }];
+  }
+  // If already selected without Ctrl: keep current multi-selection for drag
   render();
 
   const bodyScroll = document.getElementById('gantt-body-scroll');
