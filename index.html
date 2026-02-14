@@ -151,6 +151,16 @@ body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; font-size
   border: 2px solid transparent; border-radius: 3px; padding: 1px 3px;
 }
 .gantt-milestone.selected { border-color: var(--accent); background: rgba(33,150,243,.08); }
+
+.task-label { pointer-events: none; overflow: hidden; text-overflow: ellipsis; }
+.inline-edit {
+  background: rgba(255,255,255,.95); color: #333; border: 1px solid var(--accent);
+  border-radius: 3px; padding: 1px 4px; font-size: inherit;
+  outline: none; min-width: 40px; max-width: 100%;
+  pointer-events: auto; position: relative; z-index: 10;
+}
+.gantt-task .inline-edit { max-width: calc(100% - 12px); }
+.gantt-milestone .inline-edit { min-width: 60px; }
 .milestone-mark { font-size: 1.3em; color: #d32f2f; line-height: 1; }
 .milestone-label { color: #333; }
 
@@ -506,7 +516,10 @@ function renderTask(layer, item, ri, ii, rh, bh) {
   el.style.top = top + 'px';
   el.style.width = w + 'px';
   el.style.background = item.color || COLORS[0];
-  el.textContent = item.label || '';
+  const taskLabel = document.createElement('span');
+  taskLabel.className = 'task-label';
+  taskLabel.textContent = item.label || '';
+  el.appendChild(taskLabel);
   el.title = `${item.label || ''}\n${item.startDate} 〜 ${item.endDate}`;
 
   if (appMode === 'edit') {
@@ -521,9 +534,23 @@ function renderTask(layer, item, ri, ii, rh, bh) {
 
     el.addEventListener('mousedown', e => {
       if (e.target.classList.contains('resize-handle')) return;
+      if (el.querySelector('.inline-edit')) return;
       onItemMouseDown(e, ri, ii);
     });
-    el.addEventListener('dblclick', () => editItemDialog(ri, ii));
+    el.addEventListener('dblclick', e => {
+      e.stopPropagation();
+      startInlineEdit(el, taskLabel, text => {
+        state.rows[ri].items[ii].label = text;
+        render();
+      });
+    });
+    el.addEventListener('contextmenu', e => {
+      e.preventDefault(); e.stopPropagation();
+      showContextMenu(e.clientX, e.clientY, [
+        { label: '作業を編集…', action: () => editItemDialog(ri, ii) },
+        { label: '削除', action: () => { state.rows[ri].items.splice(ii, 1); selectedItems = []; render(); } }
+      ]);
+    });
   }
   layer.appendChild(el);
 }
@@ -540,29 +567,48 @@ function renderMilestone(layer, item, ri, ii, rh) {
   el.title = `${item.label || ''}\n${item.date}`;
 
   const pos = item.labelPosition || 'after';
+  let lblEl;
   if (pos === 'before') {
-    const lbl = document.createElement('span');
-    lbl.className = 'milestone-label';
-    lbl.textContent = item.label || '';
-    el.appendChild(lbl);
+    lblEl = document.createElement('span');
+    lblEl.className = 'milestone-label';
+    lblEl.textContent = item.label || '';
+    el.appendChild(lblEl);
   }
   const mark = document.createElement('span');
   mark.className = 'milestone-mark';
   mark.textContent = '▽';
   el.appendChild(mark);
   if (pos === 'after') {
-    const lbl = document.createElement('span');
-    lbl.className = 'milestone-label';
-    lbl.textContent = item.label || '';
-    el.appendChild(lbl);
+    lblEl = document.createElement('span');
+    lblEl.className = 'milestone-label';
+    lblEl.textContent = item.label || '';
+    el.appendChild(lblEl);
   }
 
   // Position: center the mark on x
   el.style.left = (x - 8) + 'px';
 
   if (appMode === 'edit') {
-    el.addEventListener('mousedown', e => onItemMouseDown(e, ri, ii));
-    el.addEventListener('dblclick', () => editItemDialog(ri, ii));
+    el.addEventListener('mousedown', e => {
+      if (el.querySelector('.inline-edit')) return;
+      onItemMouseDown(e, ri, ii);
+    });
+    el.addEventListener('dblclick', e => {
+      e.stopPropagation();
+      if (lblEl) {
+        startInlineEdit(el, lblEl, text => {
+          state.rows[ri].items[ii].label = text;
+          render();
+        });
+      }
+    });
+    el.addEventListener('contextmenu', e => {
+      e.preventDefault(); e.stopPropagation();
+      showContextMenu(e.clientX, e.clientY, [
+        { label: 'イベントを編集…', action: () => editItemDialog(ri, ii) },
+        { label: '削除', action: () => { state.rows[ri].items.splice(ii, 1); selectedItems = []; render(); } }
+      ]);
+    });
   }
   layer.appendChild(el);
 }
@@ -615,6 +661,49 @@ function renderThunderLine() {
     }
     svg.appendChild(circle);
   });
+}
+
+// ===== Inline Edit =====
+function startInlineEdit(parentEl, labelEl, onCommit) {
+  if (parentEl.querySelector('.inline-edit')) return;
+
+  const currentText = labelEl.textContent;
+  labelEl.style.display = 'none';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'inline-edit';
+  input.value = currentText;
+
+  // Insert input next to the hidden label
+  labelEl.parentNode.insertBefore(input, labelEl.nextSibling);
+  input.focus();
+  input.select();
+
+  let committed = false;
+  function commit() {
+    if (committed) return;
+    committed = true;
+    const newText = input.value;
+    input.remove();
+    labelEl.style.display = '';
+    onCommit(newText);
+  }
+  function cancel() {
+    if (committed) return;
+    committed = true;
+    input.remove();
+    labelEl.style.display = '';
+    labelEl.textContent = currentText;
+  }
+
+  input.addEventListener('keydown', e => {
+    e.stopPropagation();
+    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+    if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+  });
+  input.addEventListener('blur', () => commit());
+  input.addEventListener('mousedown', e => e.stopPropagation());
 }
 
 // ===== Selection =====
