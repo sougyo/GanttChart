@@ -176,8 +176,9 @@ body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; font-size
   position: absolute; top: 0; left: 0; pointer-events: none; z-index: 5;
 }
 .thunder-dot {
-  pointer-events: auto; cursor: pointer;
+  pointer-events: auto; cursor: grab;
 }
+.thunder-dot:active { cursor: grabbing; }
 
 /* Context Menu */
 #context-menu {
@@ -823,6 +824,11 @@ function renderThunderLine() {
     if (!c.explicit) circle.setAttribute('opacity', '0.5');
     circle.classList.add('thunder-dot');
     if (appMode === 'edit') {
+      circle.addEventListener('mousedown', e => {
+        if (e.button !== 0) return;
+        e.preventDefault(); e.stopPropagation();
+        startThunderDotDrag(e, c.rowIndex, c.explicit, c.explicitIndex);
+      });
       circle.addEventListener('contextmenu', e => {
         e.preventDefault(); e.stopPropagation();
         if (c.explicit) {
@@ -834,6 +840,44 @@ function renderThunderLine() {
     }
     svg.appendChild(circle);
   });
+}
+
+// ===== Thunder Dot Drag =====
+function startThunderDotDrag(e, rowIndex, isExplicit, explicitIndex) {
+  const bodyScroll = document.getElementById('gantt-body-scroll');
+  const scrollRect = bodyScroll.getBoundingClientRect();
+  let pointIndex = explicitIndex;
+  let moved = false;
+
+  // If dragging a default (non-explicit) dot, create an explicit point on first move
+  function ensureExplicit() {
+    if (!isExplicit && pointIndex === -1) {
+      const defDate = state.thunderLine.defaultDate || fmtDate(new Date());
+      state.thunderLine.points.push({ rowIndex: rowIndex, date: defDate });
+      pointIndex = state.thunderLine.points.length - 1;
+      isExplicit = true;
+    }
+  }
+
+  function onMove(ev) {
+    moved = true;
+    ensureExplicit();
+    const mx = ev.clientX - scrollRect.left + bodyScroll.scrollLeft;
+    const curDate = getDateForX(mx, columns, colWidth);
+    state.thunderLine.points[pointIndex].date = fmtDate(curDate);
+    showDragTooltip(ev, formatDateLabel(curDate));
+    renderThunderLine();
+  }
+
+  function onUp() {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    hideDragTooltip();
+    if (moved) render();
+  }
+
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
 }
 
 // ===== Inline Edit =====
