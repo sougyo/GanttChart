@@ -661,7 +661,10 @@ function getDateForX(x, cols, cw) {
 }
 
 // ===== Rendering =====
+let isRendering = false;
 function render() {
+  if (isRendering) return;
+  isRendering = true;
   const sd = viewRange ? viewRange.start : state.startDate;
   const ed = viewRange ? viewRange.end : state.endDate;
   columns = generateColumns(sd, ed, state.timeUnit);
@@ -690,6 +693,7 @@ function render() {
   renderBody();
   renderItems();
   renderThunderLine();
+  isRendering = false;
 }
 
 const BASE_ROW_HEIGHT = 44;
@@ -812,7 +816,11 @@ function renderSidebar() {
       nameEl.className = 'sidebar-name';
       nameEl.textContent = row.name;
       nameEl.contentEditable = true;
-      nameEl.addEventListener('blur', () => { state.rows[ri].name = nameEl.innerText.trim() || t('unnamed'); render(); });
+      nameEl.addEventListener('blur', () => {
+        if (isRendering || !nameEl.isConnected) return;
+        state.rows[ri].name = nameEl.innerText.trim() || t('unnamed');
+        render();
+      });
       nameEl.addEventListener('keydown', e => {
         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); nameEl.blur(); }
       });
@@ -854,6 +862,10 @@ function renderSidebar() {
 function startRowDrag(e, fromIndex) {
   e.preventDefault();
   e.stopPropagation();
+  // Commit any in-progress name editing before dragging
+  if (document.activeElement && document.activeElement.isContentEditable) {
+    document.activeElement.blur();
+  }
   const sb = document.getElementById('gantt-sidebar');
   const rows = sb.querySelectorAll('.sidebar-row');
   let targetIndex = fromIndex;
