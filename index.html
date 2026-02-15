@@ -1600,9 +1600,7 @@ function importJSON() {
   document.getElementById('file-input').click();
 }
 
-function handleFileImport(event) {
-  const file = event.target.files[0];
-  if (!file) return;
+function loadJSONFile(file) {
   const reader = new FileReader();
   reader.onload = e => {
     try {
@@ -1616,6 +1614,7 @@ function handleFileImport(event) {
         document.getElementById('chk-thunder').checked = state.thunderLine.visible;
         document.getElementById('thunder-default-date').value = state.thunderLine.defaultDate;
         selectedItems = [];
+        customColWidth = null;
         viewRange = null;
         render();
         showToast('インポートしました');
@@ -1627,6 +1626,12 @@ function handleFileImport(event) {
     }
   };
   reader.readAsText(file);
+}
+
+function handleFileImport(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  loadJSONFile(file);
   event.target.value = '';
 }
 
@@ -1898,6 +1903,16 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('thunder-default-date').value = state.thunderLine.defaultDate;
   initResizeHandle();
   render();
+
+  // File drag & drop import
+  document.addEventListener('dragover', e => { e.preventDefault(); });
+  document.addEventListener('drop', e => {
+    e.preventDefault();
+    const file = e.dataTransfer.files[0];
+    if (file && file.name.endsWith('.json')) {
+      loadJSONFile(file);
+    }
+  });
 });
 
 // Keyboard
