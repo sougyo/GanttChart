@@ -96,6 +96,8 @@ body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; font-size
   white-space: nowrap; overflow: hidden;
 }
 .header-cell.year-start { border-left: 2px solid #999; }
+.header-cell.weekend { background: #fff3e0; }
+.body-cell.weekend { background: #fff3e0; }
 
 #gantt-sidebar-scroll {
   grid-row: 2; grid-column: 1;
@@ -308,7 +310,7 @@ body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; font-size
   </div>
   <div class="toolbar-group" id="thunder-controls">
     <div class="toolbar-sep"></div>
-    <label><input type="checkbox" id="chk-thunder" checked onchange="toggleThunder(this.checked)"> カミナリ線</label>
+    <label><input type="checkbox" id="chk-thunder" checked onchange="toggleThunder(this.checked)"> イナズマ線</label>
     <label>基準日:</label>
     <input type="date" id="thunder-default-date" onchange="changeThunderDefault(this.value)">
   </div>
@@ -408,7 +410,8 @@ function generateColumns(start, end, unit) {
   } else {
     let cur = new Date(sd);
     while (cur <= ed) {
-      cols.push({ start: new Date(cur), end: new Date(cur), label: `${cur.getMonth()+1}/${cur.getDate()}`, year: cur.getFullYear() });
+      const dow = cur.getDay();
+      cols.push({ start: new Date(cur), end: new Date(cur), label: `${cur.getMonth()+1}/${cur.getDate()}`, year: cur.getFullYear(), weekend: dow === 0 || dow === 6 });
       cur = addDays(cur, 1);
     }
   }
@@ -545,6 +548,7 @@ function renderHeader() {
     const cell = document.createElement('div');
     cell.className = 'header-cell';
     if (col.year !== prevYear && i > 0) cell.classList.add('year-start');
+    if (col.weekend) cell.classList.add('weekend');
     cell.style.flexBasis = colWidth + 'px';
     cell.style.minWidth = colWidth + 'px';
     let lbl = col.label;
@@ -738,6 +742,7 @@ function renderBody() {
       cell.style.flexBasis = colWidth + 'px';
       cell.style.minWidth = colWidth + 'px';
       if (col.year !== prevYear && ci > 0) cell.classList.add('year-start');
+      if (col.weekend) cell.classList.add('weekend');
       prevYear = col.year;
       rowDiv.appendChild(cell);
     });
@@ -963,7 +968,7 @@ function renderThunderLine() {
         e.preventDefault(); e.stopPropagation();
         if (c.explicit) {
           showContextMenu(e.clientX, e.clientY, [
-            { label: 'カミナリ点を削除（基準日に戻す）', action: () => { state.thunderLine.points.splice(c.explicitIndex, 1); render(); } }
+            { label: '進捗位置を削除（基準日に戻す）', action: () => { state.thunderLine.points.splice(c.explicitIndex, 1); render(); } }
           ]);
         }
       });
@@ -1250,7 +1255,7 @@ document.addEventListener('DOMContentLoaded', () => {
       { label: `作業を追加 (${clickDateStr})`, action: () => addTaskDialog(ri, clickDateStr) },
       { label: `イベントを追加 (${clickDateStr})`, action: () => addMilestoneDialog(ri, clickDateStr) },
       { sep: true },
-      { label: 'カミナリ点を追加', action: () => { addThunderPoint(ri, clickDateStr); } },
+      { label: '進捗位置を追加', action: () => { addThunderPoint(ri, clickDateStr); } },
     ];
 
     if (selectedItems.length > 0) {
@@ -1692,6 +1697,11 @@ function renderToCanvas() {
   let prevYear = null;
   columns.forEach((col, i) => {
     const x = sw + i * colWidth;
+    // Weekend background
+    if (col.weekend) {
+      ctx.fillStyle = '#fff3e0';
+      ctx.fillRect(x, 0, colWidth, totalH);
+    }
     // grid line
     ctx.strokeStyle = '#d0d0d0';
     ctx.lineWidth = 1;
