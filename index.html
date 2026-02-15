@@ -100,10 +100,14 @@ body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; font-size
 #gantt-corner:focus { background: #e8f0fe; }
 #gantt-header-scroll {
   grid-row: 1; grid-column: 2;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
   border-bottom: 2px solid var(--border-color);
   background: var(--header-bg);
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
+#gantt-header-scroll::-webkit-scrollbar { display: none; }
 #gantt-header {
   display: flex; height: 100%;
 }
@@ -1554,9 +1558,14 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Sync scroll
+  const headerScroll = document.getElementById('gantt-header-scroll');
   bodyScroll.addEventListener('scroll', () => {
-    document.getElementById('gantt-header-scroll').scrollLeft = bodyScroll.scrollLeft;
+    headerScroll.scrollLeft = bodyScroll.scrollLeft;
     document.getElementById('gantt-sidebar-scroll').scrollTop = bodyScroll.scrollTop;
+  });
+  // Also sync if header is scrolled directly (e.g. trackpad)
+  headerScroll.addEventListener('scroll', () => {
+    bodyScroll.scrollLeft = headerScroll.scrollLeft;
   });
 });
 
