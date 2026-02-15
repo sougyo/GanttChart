@@ -97,7 +97,6 @@ body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; font-size
 }
 #gantt-sidebar { }
 .sidebar-row {
-  height: var(--row-height);
   border-bottom: 1px solid var(--border-color);
   display: flex; align-items: center;
   padding: 0 6px; gap: 4px;
@@ -119,13 +118,13 @@ body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; font-size
 .sidebar-btns button:hover { background: #ddd; color: #333; }
 .sidebar-visibility {
   cursor: pointer; font-size: 14px; flex-shrink: 0; width: 20px; text-align: center;
-  user-select: none; color: #888; line-height: var(--row-height); opacity: 0.7;
+  user-select: none; color: #888; opacity: 0.7;
 }
 .sidebar-visibility:hover { opacity: 1; }
 .sidebar-row.row-hidden .sidebar-name { color: #bbb; text-decoration: line-through; }
 .sidebar-drag-handle {
   cursor: grab; color: #bbb; font-size: 14px; padding: 0 2px;
-  user-select: none; line-height: var(--row-height); flex-shrink: 0;
+  user-select: none; flex-shrink: 0;
 }
 .sidebar-drag-handle:hover { color: #666; }
 .sidebar-row.drag-over-above { box-shadow: inset 0 3px 0 0 var(--accent); }
@@ -141,7 +140,7 @@ body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; font-size
   position: relative;
 }
 .body-row {
-  display: flex; height: var(--row-height);
+  display: flex;
   border-bottom: 1px solid var(--border-color);
 }
 .body-row:nth-child(even) { background: var(--row-even-bg); }
@@ -182,6 +181,14 @@ body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; font-size
 .gantt-milestone.selected { border-color: var(--accent); background: rgba(33,150,243,.08); }
 
 .task-label { pointer-events: none; overflow: hidden; text-overflow: ellipsis; }
+.task-label-outside {
+  position: absolute; pointer-events: none; white-space: nowrap;
+  font-size: inherit; color: #333;
+}
+.task-label-outside.pos-above { bottom: 100%; left: 0; margin-bottom: 1px; }
+.task-label-outside.pos-below { top: 100%; left: 0; margin-top: 1px; }
+.task-label-outside.pos-left { right: 100%; top: 50%; transform: translateY(-50%); margin-right: 4px; }
+.task-label-outside.pos-right { left: 100%; top: 50%; transform: translateY(-50%); margin-left: 4px; }
 .inline-edit {
   background: rgba(255,255,255,.95); color: #333; border: 1px solid var(--accent);
   border-radius: 3px; padding: 1px 4px; font-size: inherit;
@@ -459,11 +466,46 @@ function render() {
   document.documentElement.style.setProperty('--font-size', state.fontSize + 'px');
 
   visibleRows = getVisibleRows();
+  computeRowLayout();
   renderHeader();
   renderSidebar();
   renderBody();
   renderItems();
   renderThunderLine();
+}
+
+const BASE_ROW_HEIGHT = 44;
+let rowHeights = []; // per visible row
+let rowYOffsets = []; // cumulative Y for each visible row
+let totalBodyHeight = 0;
+
+function computeRowLayout() {
+  const labelExtra = Math.ceil(state.fontSize * 0.8) + 4;
+  rowHeights = [];
+  rowYOffsets = [];
+  let y = 0;
+  visibleRows.forEach((entry, vi) => {
+    let hasAbove = false, hasBelow = false;
+    entry.row.items.forEach(item => {
+      if (item.type === 'task') {
+        const pos = item.taskLabelPosition || 'inside';
+        if (pos === 'above') hasAbove = true;
+        if (pos === 'below') hasBelow = true;
+      }
+    });
+    const h = BASE_ROW_HEIGHT + (hasAbove ? labelExtra : 0) + (hasBelow ? labelExtra : 0);
+    rowHeights.push(h);
+    rowYOffsets.push(y);
+    y += h;
+  });
+  totalBodyHeight = y;
+}
+
+function getVisibleRowIndexForY(y) {
+  for (let i = 0; i < visibleRows.length; i++) {
+    if (y < rowYOffsets[i] + rowHeights[i]) return i;
+  }
+  return visibleRows.length - 1;
 }
 
 // Returns array of {row, originalIndex} for rows to display
@@ -506,8 +548,10 @@ function renderSidebar() {
   if (appMode === 'edit') {
     // Edit mode: show all rows with visibility toggle
     state.rows.forEach((row, ri) => {
+      // In edit mode visibleRows = all rows, so vi === ri
       const div = document.createElement('div');
       div.className = 'sidebar-row';
+      div.style.height = rowHeights[ri] + 'px';
       div.dataset.rowIndex = ri;
 
       const vis = document.createElement('span');
@@ -555,9 +599,10 @@ function renderSidebar() {
     });
   } else {
     // View mode: show only visible rows
-    visibleRows.forEach(entry => {
+    visibleRows.forEach((entry, vi) => {
       const div = document.createElement('div');
       div.className = 'sidebar-row';
+      div.style.height = rowHeights[vi] + 'px';
       const nameEl = document.createElement('span');
       nameEl.className = 'sidebar-name';
       nameEl.textContent = entry.row.name;
@@ -574,7 +619,6 @@ function startRowDrag(e, fromIndex) {
   e.stopPropagation();
   const sb = document.getElementById('gantt-sidebar');
   const rows = sb.querySelectorAll('.sidebar-row');
-  const rh = rows[0].offsetHeight;
   let targetIndex = fromIndex;
 
   rows[fromIndex].classList.add('dragging');
@@ -587,7 +631,7 @@ function startRowDrag(e, fromIndex) {
     const sbRect = sb.getBoundingClientRect();
     const sidebarScroll = document.getElementById('gantt-sidebar-scroll');
     const y = ev.clientY - sbRect.top + sidebarScroll.scrollTop;
-    let hoverIndex = Math.floor(y / rh);
+    let hoverIndex = getVisibleRowIndexForY(y);
     hoverIndex = Math.max(0, Math.min(hoverIndex, state.rows.length - 1));
 
     if (hoverIndex === fromIndex) {
@@ -596,7 +640,6 @@ function startRowDrag(e, fromIndex) {
     }
 
     // Show indicator
-    const yInRow = y - hoverIndex * rh;
     if (hoverIndex < fromIndex) {
       // Moving up: drop above the hovered row
       rows[hoverIndex].classList.add('drag-over-above');
@@ -659,16 +702,15 @@ function moveRow(from, to) {
 function renderBody() {
   const grid = document.getElementById('grid-layer');
   grid.innerHTML = '';
-  const rh = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--row-height'));
   const totalW = columns.length * colWidth;
-  const totalH = visibleRows.length * rh;
   const body = document.getElementById('gantt-body');
   body.style.width = totalW + 'px';
-  body.style.height = totalH + 'px';
+  body.style.height = totalBodyHeight + 'px';
   let prevYear = null;
   visibleRows.forEach((entry, vi) => {
     const rowDiv = document.createElement('div');
     rowDiv.className = 'body-row';
+    rowDiv.style.height = rowHeights[vi] + 'px';
     prevYear = null;
     columns.forEach((col, ci) => {
       const cell = document.createElement('div');
@@ -686,28 +728,28 @@ function renderBody() {
 function renderItems() {
   const layer = document.getElementById('items-layer');
   layer.innerHTML = '';
-  const rh = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--row-height'));
   const bh = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--bar-height'));
 
   visibleRows.forEach((entry, vi) => {
     const ri = entry.originalIndex;
+    const rh = rowHeights[vi];
+    const ry = rowYOffsets[vi];
     entry.row.items.forEach((item, ii) => {
       if (item.type === 'task') {
-        renderTask(layer, item, ri, ii, rh, bh, vi);
+        renderTask(layer, item, ri, ii, rh, bh, ry);
       } else if (item.type === 'milestone') {
-        renderMilestone(layer, item, ri, ii, rh, vi);
+        renderMilestone(layer, item, ri, ii, rh, ry);
       }
     });
   });
 }
 
-function renderTask(layer, item, ri, ii, rh, bh, vi) {
+function renderTask(layer, item, ri, ii, rh, bh, ry) {
   const x1 = getXForDate(item.startDate, columns, colWidth);
   const x2 = getXForDateEnd(item.endDate, columns, colWidth);
   if (x2 < 0 || x1 > columns.length * colWidth) return;
   const w = Math.max(x2 - x1, 6);
-  const displayRow = vi !== undefined ? vi : ri;
-  const top = displayRow * rh + (rh - bh) / 2;
+  const top = ry + (rh - bh) / 2;
 
   const el = document.createElement('div');
   el.className = 'gantt-item gantt-task';
@@ -716,10 +758,20 @@ function renderTask(layer, item, ri, ii, rh, bh, vi) {
   el.style.top = top + 'px';
   el.style.width = w + 'px';
   el.style.background = item.color || COLORS[0];
-  const taskLabel = document.createElement('span');
-  taskLabel.className = 'task-label';
-  taskLabel.textContent = item.label || '';
-  el.appendChild(taskLabel);
+  const lblPos = item.taskLabelPosition || 'inside';
+  if (lblPos !== 'inside') el.style.overflow = 'visible';
+  let taskLabel;
+  if (lblPos === 'inside') {
+    taskLabel = document.createElement('span');
+    taskLabel.className = 'task-label';
+    taskLabel.textContent = item.label || '';
+    el.appendChild(taskLabel);
+  } else {
+    taskLabel = document.createElement('span');
+    taskLabel.className = 'task-label-outside pos-' + lblPos;
+    taskLabel.textContent = item.label || '';
+    el.appendChild(taskLabel);
+  }
   el.title = `${item.label || ''}\n${item.startDate} 〜 ${item.endDate}`;
 
   if (appMode === 'edit') {
@@ -755,11 +807,10 @@ function renderTask(layer, item, ri, ii, rh, bh, vi) {
   layer.appendChild(el);
 }
 
-function renderMilestone(layer, item, ri, ii, rh, vi) {
+function renderMilestone(layer, item, ri, ii, rh, ry) {
   const x = getXForDateCenter(item.date, columns, colWidth);
   if (x < 0 || x > columns.length * colWidth) return;
-  const displayRow = vi !== undefined ? vi : ri;
-  const top = displayRow * rh + rh / 2;
+  const top = ry + rh / 2;
 
   const el = document.createElement('div');
   el.className = 'gantt-item gantt-milestone';
@@ -835,24 +886,25 @@ function getThunderPointsForRender() {
 
 function renderThunderLine() {
   const svg = document.getElementById('thunder-svg');
-  const rh = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--row-height'));
   const totalW = columns.length * colWidth;
-  const totalH = visibleRows.length * rh;
   svg.setAttribute('width', totalW);
-  svg.setAttribute('height', totalH);
+  svg.setAttribute('height', totalBodyHeight);
   svg.innerHTML = '';
 
   if (!state.thunderLine.visible || visibleRows.length === 0) return;
 
   const pts = getThunderPointsForRender();
-  const coords = pts.map(p => ({
-    x: getXForDateCenter(p.date, columns, colWidth),
-    y: p.displayIndex * rh + rh / 2,
-    explicit: p.explicit,
-    explicitIndex: p.explicitIndex,
-    rowIndex: p.rowIndex,
-    displayIndex: p.displayIndex
-  }));
+  const coords = pts.map(p => {
+    const vi = p.displayIndex;
+    return {
+      x: getXForDateCenter(p.date, columns, colWidth),
+      y: rowYOffsets[vi] + rowHeights[vi] / 2,
+      explicit: p.explicit,
+      explicitIndex: p.explicitIndex,
+      rowIndex: p.rowIndex,
+      displayIndex: vi
+    };
+  });
 
   if (coords.length > 0) {
     const defX = getXForDateCenter(state.thunderLine.defaultDate || fmtDate(new Date()), columns, colWidth);
@@ -860,7 +912,7 @@ function renderThunderLine() {
     pathParts.push(`${defX},${0}`);
     for (let i = 0; i < coords.length; i++) {
       pathParts.push(`${coords[i].x},${coords[i].y}`);
-      const boundaryY = (coords[i].displayIndex + 1) * rh;
+      const boundaryY = rowYOffsets[coords[i].displayIndex] + rowHeights[coords[i].displayIndex];
       pathParts.push(`${defX},${boundaryY}`);
     }
 
@@ -1166,11 +1218,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (appMode !== 'edit') return;
     e.preventDefault();
     const rect = document.getElementById('gantt-body').getBoundingClientRect();
-    const rh = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--row-height'));
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    const ri = Math.floor(y / rh);
-    if (ri < 0 || ri >= state.rows.length) return;
+    const vi = getVisibleRowIndexForY(y);
+    if (vi < 0 || vi >= visibleRows.length) return;
+    const ri = visibleRows[vi].originalIndex;
     const clickDate = getDateForX(x, columns, colWidth);
     const clickDateStr = fmtDate(clickDate);
 
@@ -1307,18 +1359,27 @@ function showModal(title, fields, onOk) {
   if (firstInput) setTimeout(() => firstInput.focus(), 50);
 }
 
+const TASK_LABEL_POS_OPTIONS = [
+  { value: 'inside', label: '中' },
+  { value: 'above', label: '上' },
+  { value: 'below', label: '下' },
+  { value: 'left', label: '左' },
+  { value: 'right', label: '右' }
+];
+
 function addTaskDialog(ri, dateStr) {
   const endDate = fmtDate(addDays(parseDate(dateStr), 30));
   showModal('作業を追加', [
     { key: 'label', label: 'ラベル', type: 'text', value: '' },
     { key: 'startDate', label: '開始日', type: 'date', value: dateStr },
     { key: 'endDate', label: '終了日', type: 'date', value: endDate },
-    { key: 'color', label: '色', type: 'color', value: COLORS[0] }
+    { key: 'color', label: '色', type: 'color', value: COLORS[0] },
+    { key: 'taskLabelPosition', label: 'ラベル位置', type: 'select', value: 'inside', options: TASK_LABEL_POS_OPTIONS }
   ], vals => {
     if (!vals.startDate || !vals.endDate) return;
     state.rows[ri].items.push({
       type: 'task', startDate: vals.startDate, endDate: vals.endDate,
-      label: vals.label, color: vals.color
+      label: vals.label, color: vals.color, taskLabelPosition: vals.taskLabelPosition
     });
     render();
   });
@@ -1347,13 +1408,15 @@ function editItemDialog(ri, ii) {
       { key: 'label', label: 'ラベル', type: 'text', value: item.label },
       { key: 'startDate', label: '開始日', type: 'date', value: item.startDate },
       { key: 'endDate', label: '終了日', type: 'date', value: item.endDate },
-      { key: 'color', label: '色', type: 'color', value: item.color || COLORS[0] }
+      { key: 'color', label: '色', type: 'color', value: item.color || COLORS[0] },
+      { key: 'taskLabelPosition', label: 'ラベル位置', type: 'select', value: item.taskLabelPosition || 'inside', options: TASK_LABEL_POS_OPTIONS }
     ], vals => {
       if (!vals.startDate || !vals.endDate) return;
       item.label = vals.label;
       item.startDate = vals.startDate;
       item.endDate = vals.endDate;
       item.color = vals.color;
+      item.taskLabelPosition = vals.taskLabelPosition;
       render();
     });
   } else {
@@ -1565,14 +1628,15 @@ async function copyAsImage() {
 }
 
 function renderToCanvas() {
-  const rh = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--row-height'));
   const bh = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--bar-height'));
   const sw = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-width'));
   const hh = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--header-height'));
   const fs = state.fontSize;
 
+  computeRowLayout();
+
   const totalW = columns.length * colWidth + sw;
-  const totalH = visibleRows.length * rh + hh;
+  const totalH = totalBodyHeight + hh;
 
   const dpr = window.devicePixelRatio || 1;
   const canvas = document.createElement('canvas');
@@ -1625,10 +1689,11 @@ function renderToCanvas() {
   // Rows
   visibleRows.forEach((entry, vi) => {
     const row = entry.row;
-    const y = hh + vi * rh;
+    const rh = rowHeights[vi];
+    const y = hh + rowYOffsets[vi];
 
     // Row background
-    ctx.fillStyle = ri % 2 === 0 ? '#fafbfc' : '#fff';
+    ctx.fillStyle = vi % 2 === 0 ? '#fafbfc' : '#fff';
     ctx.fillRect(0, y, totalW, rh);
 
     // Row border
@@ -1665,12 +1730,26 @@ function renderToCanvas() {
         ctx.shadowOffsetY = 0;
 
         if (item.label) {
-          ctx.fillStyle = '#fff';
+          const tlp = item.taskLabelPosition || 'inside';
           ctx.font = `${fs * 0.8}px sans-serif`;
           ctx.textBaseline = 'middle';
           const tw = ctx.measureText(item.label).width;
-          if (tw < w - 8) {
-            ctx.fillText(item.label, x1 + (w - tw) / 2, barY + bh / 2);
+          if (tlp === 'inside') {
+            ctx.fillStyle = '#fff';
+            if (tw < w - 8) {
+              ctx.fillText(item.label, x1 + (w - tw) / 2, barY + bh / 2);
+            }
+          } else {
+            ctx.fillStyle = '#333';
+            if (tlp === 'above') {
+              ctx.fillText(item.label, x1, barY - 3);
+            } else if (tlp === 'below') {
+              ctx.fillText(item.label, x1, barY + bh + fs * 0.8 + 1);
+            } else if (tlp === 'left') {
+              ctx.fillText(item.label, x1 - tw - 4, barY + bh / 2);
+            } else if (tlp === 'right') {
+              ctx.fillText(item.label, x1 + w + 4, barY + bh / 2);
+            }
           }
         }
       } else if (item.type === 'milestone') {
@@ -1701,7 +1780,7 @@ function renderToCanvas() {
     const pts = getThunderPointsForRender();
     const coords = pts.map(p => ({
       x: sw + getXForDateCenter(p.date, columns, colWidth),
-      y: hh + p.displayIndex * rh + rh / 2,
+      y: hh + rowYOffsets[p.displayIndex] + rowHeights[p.displayIndex] / 2,
       explicit: p.explicit,
       displayIndex: p.displayIndex
     }));
@@ -1714,7 +1793,7 @@ function renderToCanvas() {
       ctx.moveTo(defX, hh);
       for (let i = 0; i < coords.length; i++) {
         ctx.lineTo(coords[i].x, coords[i].y);
-        const boundaryY = hh + (coords[i].displayIndex + 1) * rh;
+        const boundaryY = hh + rowYOffsets[coords[i].displayIndex] + rowHeights[coords[i].displayIndex];
         ctx.lineTo(defX, boundaryY);
       }
       ctx.stroke();
