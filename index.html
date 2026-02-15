@@ -63,12 +63,21 @@ body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; font-size
   border-radius: 6px;
   overflow: hidden;
   box-shadow: 0 2px 8px rgba(0,0,0,.07);
+  position: relative;
 }
 #gantt-resize-handle {
   position: absolute; top: 0; width: 8px; height: 100%;
   cursor: col-resize; z-index: 20;
 }
 #gantt-resize-handle:hover, #gantt-resize-handle.active {
+  background: var(--accent); opacity: 0.4; border-radius: 2px;
+}
+#sidebar-resize-handle {
+  position: absolute; top: 0; width: 8px; height: 100%;
+  cursor: col-resize; z-index: 20;
+  left: calc(var(--sidebar-width) - 4px);
+}
+#sidebar-resize-handle:hover, #sidebar-resize-handle.active {
   background: var(--accent); opacity: 0.4; border-radius: 2px;
 }
 #gantt-corner {
@@ -103,16 +112,18 @@ body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; font-size
   grid-row: 2; grid-column: 1;
   overflow: hidden;
   border-right: 2px solid var(--border-color);
+  position: relative;
 }
 #gantt-sidebar { }
 .sidebar-row {
   border-bottom: 1px solid var(--border-color);
   display: flex; align-items: center;
-  padding: 0 6px; gap: 4px;
+  padding: 2px 6px; gap: 4px;
+  min-height: var(--row-height);
 }
 .sidebar-row:nth-child(even) { background: var(--row-even-bg); }
 .sidebar-name {
-  flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  flex: 1; min-width: 0; overflow-wrap: break-word; word-break: break-word;
   outline: none; font-size: inherit; border: none; background: transparent;
   padding: 2px 4px; border-radius: 3px;
 }
@@ -331,6 +342,7 @@ body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; font-size
 </div>
 
 <div id="gantt-wrapper">
+  <div id="sidebar-resize-handle"></div>
   <div id="gantt-corner">タスク名</div>
   <div id="gantt-header-scroll"><div id="gantt-header"></div></div>
   <div id="gantt-sidebar-scroll"><div id="gantt-sidebar"></div></div>
@@ -488,6 +500,7 @@ function render() {
   computeRowLayout();
   renderHeader();
   renderSidebar();
+  measureSidebarRowHeights();
   renderBody();
   renderItems();
   renderThunderLine();
@@ -561,6 +574,22 @@ function renderHeader() {
   });
 }
 
+function measureSidebarRowHeights() {
+  const sb = document.getElementById('gantt-sidebar');
+  const sidebarRows = sb.querySelectorAll('.sidebar-row');
+  let y = 0;
+  sidebarRows.forEach((el, i) => {
+    const naturalH = el.offsetHeight;
+    if (naturalH > rowHeights[i]) {
+      rowHeights[i] = naturalH;
+    }
+    el.style.height = rowHeights[i] + 'px';
+    rowYOffsets[i] = y;
+    y += rowHeights[i];
+  });
+  totalBodyHeight = y;
+}
+
 function renderSidebar() {
   const sb = document.getElementById('gantt-sidebar');
   sb.innerHTML = '';
@@ -571,7 +600,7 @@ function renderSidebar() {
       // In edit mode visibleRows = all rows, so vi === ri
       const div = document.createElement('div');
       div.className = 'sidebar-row';
-      div.style.height = rowHeights[ri] + 'px';
+      div.style.minHeight = rowHeights[ri] + 'px';
       div.dataset.rowIndex = ri;
 
       const vis = document.createElement('span');
@@ -622,7 +651,7 @@ function renderSidebar() {
     visibleRows.forEach((entry, vi) => {
       const div = document.createElement('div');
       div.className = 'sidebar-row';
-      div.style.height = rowHeights[vi] + 'px';
+      div.style.minHeight = rowHeights[vi] + 'px';
       const nameEl = document.createElement('span');
       nameEl.className = 'sidebar-name';
       nameEl.textContent = entry.row.name;
@@ -1738,11 +1767,30 @@ function renderToCanvas() {
     ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(0, y + rh); ctx.lineTo(totalW, y + rh); ctx.stroke();
 
-    // Row name
+    // Row name (with wrapping)
     ctx.fillStyle = '#333';
     ctx.font = `${fs}px sans-serif`;
-    ctx.textBaseline = 'middle';
-    ctx.fillText(row.name, 8, y + rh / 2, sw - 16);
+    ctx.textBaseline = 'top';
+    const maxTextW = sw - 16;
+    const lineH = fs * 1.3;
+    const words = row.name.split('');
+    let lines = [];
+    let curLine = '';
+    for (const ch of words) {
+      const testLine = curLine + ch;
+      if (ctx.measureText(testLine).width > maxTextW && curLine) {
+        lines.push(curLine);
+        curLine = ch;
+      } else {
+        curLine = testLine;
+      }
+    }
+    if (curLine) lines.push(curLine);
+    const totalTextH = lines.length * lineH;
+    const textStartY = y + (rh - totalTextH) / 2;
+    lines.forEach((line, li) => {
+      ctx.fillText(line, 8, textStartY + li * lineH);
+    });
 
     // Items
     row.items.forEach(item => {
@@ -1907,11 +1955,42 @@ function initResizeHandle() {
   });
 }
 
+// ===== Sidebar Resize Handle =====
+function initSidebarResizeHandle() {
+  const handle = document.getElementById('sidebar-resize-handle');
+
+  handle.addEventListener('mousedown', e => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startWidth = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-width'));
+    handle.classList.add('active');
+
+    function onMove(ev) {
+      const dx = ev.clientX - startX;
+      const newWidth = Math.max(80, Math.min(600, startWidth + dx));
+      document.documentElement.style.setProperty('--sidebar-width', newWidth + 'px');
+      render();
+    }
+
+    function onUp() {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      handle.classList.remove('active');
+    }
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}
+
 // ===== Init =====
 document.addEventListener('DOMContentLoaded', () => {
   document.body.classList.add('edit-mode');
   document.getElementById('thunder-default-date').value = state.thunderLine.defaultDate;
   initResizeHandle();
+  initSidebarResizeHandle();
   render();
 
   // File drag & drop import
