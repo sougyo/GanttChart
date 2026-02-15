@@ -7,6 +7,8 @@
 https://sougyo.github.io/GanttChart/ にアクセスしてください。
 あるいは、 `index.html` をブラウザで開くだけで利用できます。
 
+<img src="doc/sample.gif" alt="sample">
+
 ## 機能一覧
 
 ### 基本
