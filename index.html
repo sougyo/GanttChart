@@ -102,6 +102,14 @@ body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; font-size
   cursor: pointer; font-size: 14px; color: #888; border-radius: 3px; line-height: 20px; padding: 0;
 }
 .sidebar-btns button:hover { background: #ddd; color: #333; }
+.sidebar-drag-handle {
+  cursor: grab; color: #bbb; font-size: 14px; padding: 0 2px;
+  user-select: none; line-height: var(--row-height); flex-shrink: 0;
+}
+.sidebar-drag-handle:hover { color: #666; }
+.sidebar-row.drag-over-above { box-shadow: inset 0 3px 0 0 var(--accent); }
+.sidebar-row.drag-over-below { box-shadow: inset 0 -3px 0 0 var(--accent); }
+.sidebar-row.dragging { opacity: 0.4; }
 
 #gantt-body-scroll {
   grid-row: 2; grid-column: 2;
@@ -462,6 +470,17 @@ function renderSidebar() {
   state.rows.forEach((row, ri) => {
     const div = document.createElement('div');
     div.className = 'sidebar-row';
+    div.dataset.rowIndex = ri;
+
+    if (appMode === 'edit') {
+      const handle = document.createElement('span');
+      handle.className = 'sidebar-drag-handle';
+      handle.textContent = '☰';
+      handle.title = 'ドラッグで並べ替え';
+      handle.addEventListener('mousedown', e => startRowDrag(e, ri));
+      div.appendChild(handle);
+    }
+
     const nameEl = document.createElement('span');
     nameEl.className = 'sidebar-name';
     nameEl.textContent = row.name;
@@ -486,6 +505,94 @@ function renderSidebar() {
     }
     sb.appendChild(div);
   });
+}
+
+// ===== Row Drag & Drop =====
+function startRowDrag(e, fromIndex) {
+  e.preventDefault();
+  e.stopPropagation();
+  const sb = document.getElementById('gantt-sidebar');
+  const rows = sb.querySelectorAll('.sidebar-row');
+  const rh = rows[0].offsetHeight;
+  let targetIndex = fromIndex;
+
+  rows[fromIndex].classList.add('dragging');
+
+  function onMove(ev) {
+    // Clear all indicators
+    rows.forEach(r => { r.classList.remove('drag-over-above', 'drag-over-below'); });
+
+    // Find which row the mouse is over
+    const sbRect = sb.getBoundingClientRect();
+    const sidebarScroll = document.getElementById('gantt-sidebar-scroll');
+    const y = ev.clientY - sbRect.top + sidebarScroll.scrollTop;
+    let hoverIndex = Math.floor(y / rh);
+    hoverIndex = Math.max(0, Math.min(hoverIndex, state.rows.length - 1));
+
+    if (hoverIndex === fromIndex) {
+      targetIndex = fromIndex;
+      return;
+    }
+
+    // Show indicator
+    const yInRow = y - hoverIndex * rh;
+    if (hoverIndex < fromIndex) {
+      // Moving up: drop above the hovered row
+      rows[hoverIndex].classList.add('drag-over-above');
+      targetIndex = hoverIndex;
+    } else {
+      // Moving down: drop below the hovered row
+      rows[hoverIndex].classList.add('drag-over-below');
+      targetIndex = hoverIndex;
+    }
+  }
+
+  function onUp() {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    rows.forEach(r => { r.classList.remove('dragging', 'drag-over-above', 'drag-over-below'); });
+
+    if (targetIndex !== fromIndex) {
+      moveRow(fromIndex, targetIndex);
+    }
+  }
+
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+}
+
+function moveRow(from, to) {
+  // Move the row in state.rows
+  const row = state.rows.splice(from, 1)[0];
+  state.rows.splice(to, 0, row);
+
+  // Update thunder line point indices
+  state.thunderLine.points.forEach(p => {
+    if (p.rowIndex === from) {
+      p.rowIndex = to;
+    } else if (from < to) {
+      // Moved down: rows between (from, to] shift up by 1
+      if (p.rowIndex > from && p.rowIndex <= to) p.rowIndex--;
+    } else {
+      // Moved up: rows between [to, from) shift down by 1
+      if (p.rowIndex >= to && p.rowIndex < from) p.rowIndex++;
+    }
+  });
+
+  // Update selected items indices
+  selectedItems = selectedItems.map(s => {
+    let newRi = s.rowIndex;
+    if (s.rowIndex === from) {
+      newRi = to;
+    } else if (from < to) {
+      if (s.rowIndex > from && s.rowIndex <= to) newRi--;
+    } else {
+      if (s.rowIndex >= to && s.rowIndex < from) newRi++;
+    }
+    return { rowIndex: newRi, itemIndex: s.itemIndex };
+  });
+
+  render();
 }
 
 function renderBody() {
