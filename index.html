@@ -14,11 +14,11 @@
   limitations under the License.
 -->
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ガントチャート</title>
+<title>Gantt Chart</title>
 <style>
 :root {
   --font-size: 14px;
@@ -294,57 +294,64 @@ body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; font-size
 
 <div id="toolbar">
   <div class="toolbar-group">
-    <button id="btn-edit-mode" class="active" onclick="setMode('edit')">編集</button>
-    <button id="btn-view-mode" onclick="setMode('view')">表示</button>
+    <button id="btn-edit-mode" class="active" onclick="setMode('edit')"></button>
+    <button id="btn-view-mode" onclick="setMode('view')"></button>
   </div>
   <div class="toolbar-sep"></div>
   <div class="toolbar-group">
-    <label>単位:</label>
+    <label id="lbl-unit"></label>
     <select id="sel-unit" onchange="changeUnit(this.value)">
-      <option value="month" selected>月</option>
-      <option value="week">週</option>
-      <option value="day">日</option>
+      <option value="month" selected id="opt-month"></option>
+      <option value="week" id="opt-week"></option>
+      <option value="day" id="opt-day"></option>
     </select>
   </div>
   <div class="toolbar-sep"></div>
   <div class="toolbar-group">
-    <label>文字:</label>
+    <label id="lbl-font"></label>
     <button onclick="changeFontSize(-1)">A-</button>
     <button onclick="changeFontSize(1)">A+</button>
   </div>
   <div class="toolbar-sep"></div>
   <div class="toolbar-group" id="edit-controls">
-    <button onclick="addColumnStart()">←列追加</button>
-    <button onclick="addColumnEnd()">列追加→</button>
-    <button onclick="removeColumnStart()">←列削除</button>
-    <button onclick="removeColumnEnd()">列削除→</button>
-    <button onclick="addRow()">行追加</button>
+    <button id="btn-add-col-start" onclick="addColumnStart()"></button>
+    <button id="btn-add-col-end" onclick="addColumnEnd()"></button>
+    <button id="btn-rm-col-start" onclick="removeColumnStart()"></button>
+    <button id="btn-rm-col-end" onclick="removeColumnEnd()"></button>
+    <button id="btn-add-row" onclick="addRow()"></button>
   </div>
   <div class="toolbar-group" id="thunder-controls">
     <div class="toolbar-sep"></div>
-    <label><input type="checkbox" id="chk-thunder" checked onchange="toggleThunder(this.checked)"> イナズマ線</label>
-    <label>基準日:</label>
+    <label><input type="checkbox" id="chk-thunder" checked onchange="toggleThunder(this.checked)"> <span id="lbl-thunder"></span></label>
+    <label id="lbl-base-date"></label>
     <input type="date" id="thunder-default-date" onchange="changeThunderDefault(this.value)">
   </div>
   <div class="toolbar-group" id="view-controls" style="display:none;">
-    <label>期間:</label>
+    <label id="lbl-range"></label>
     <input type="date" id="view-start" onchange="applyViewRange()">
-    <span>〜</span>
+    <span>~</span>
     <input type="date" id="view-end" onchange="applyViewRange()">
-    <button onclick="clearViewRange()">全期間</button>
+    <button id="btn-all-range" onclick="clearViewRange()"></button>
     <div class="toolbar-sep"></div>
-    <button onclick="copyAsImage()">画像コピー</button>
+    <button id="btn-copy-image" onclick="copyAsImage()"></button>
   </div>
   <div class="toolbar-sep"></div>
   <div class="toolbar-group">
-    <button onclick="exportJSON()">エクスポート</button>
-    <button onclick="importJSON()">インポート</button>
+    <button id="btn-export" onclick="exportJSON()"></button>
+    <button id="btn-import" onclick="importJSON()"></button>
+  </div>
+  <div class="toolbar-sep"></div>
+  <div class="toolbar-group">
+    <select id="sel-lang" onchange="changeLang(this.value)">
+      <option value="en">EN</option>
+      <option value="ja">JA</option>
+    </select>
   </div>
 </div>
 
 <div id="gantt-wrapper">
   <div id="sidebar-resize-handle"></div>
-  <div id="gantt-corner">タスク名</div>
+  <div id="gantt-corner">Task</div>
   <div id="gantt-header-scroll"><div id="gantt-header"></div></div>
   <div id="gantt-sidebar-scroll"><div id="gantt-sidebar"></div></div>
   <div id="gantt-body-scroll">
@@ -363,19 +370,185 @@ body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; font-size
 <input type="file" id="file-input" accept=".json" style="display:none" onchange="handleFileImport(event)">
 
 <script>
+// ===== i18n =====
+const I18N = {
+  en: {
+    title: 'Gantt Chart',
+    taskName: 'Task',
+    edit: 'Edit',
+    view: 'View',
+    unit: 'Unit:',
+    month: 'Month',
+    week: 'Week',
+    day: 'Day',
+    font: 'Font:',
+    addColStart: '\u2190Col',
+    addColEnd: 'Col\u2192',
+    rmColStart: '\u2190Del',
+    rmColEnd: 'Del\u2192',
+    addRow: 'Add Row',
+    thunderLine: 'Thunder Line',
+    baseDate: 'Base:',
+    range: 'Range:',
+    allRange: 'All',
+    copyImage: 'Copy Image',
+    export: 'Export',
+    import: 'Import',
+    cancel: 'Cancel',
+    ok: 'OK',
+    label: 'Label',
+    startDate: 'Start',
+    endDate: 'End',
+    color: 'Color',
+    labelPos: 'Label Position',
+    posInside: 'Inside',
+    posAbove: 'Above',
+    posBelow: 'Below',
+    posLeft: 'Left',
+    posRight: 'Right',
+    posBefore: 'Before',
+    posAfter: 'After',
+    date: 'Date',
+    addTask: 'Add Task',
+    addMilestone: 'Add Milestone',
+    editTask: 'Edit Task',
+    editMilestone: 'Edit Milestone',
+    addProgress: 'Add Progress Point',
+    deleteSelected: 'Delete Selected',
+    deleteRow: 'Delete Row',
+    addRowAbove: 'Add Row Above',
+    deleteItem: 'Delete',
+    editItem: 'Edit Task\u2026',
+    editMilestoneItem: 'Edit Milestone\u2026',
+    deleteProgress: 'Reset Progress (use base date)',
+    visibleInView: 'Visible in View mode',
+    hiddenInView: 'Hidden in View mode',
+    dragToReorder: 'Drag to reorder',
+    unnamed: '(Unnamed)',
+    newTask: 'New Task',
+    exported: 'Exported',
+    imported: 'Imported',
+    imageCopied: 'Image copied to clipboard',
+    imageDownloaded: 'Image downloaded',
+    invalidFile: 'Invalid file format.',
+    jsonError: 'Failed to load JSON: ',
+  },
+  ja: {
+    title: '\u30AC\u30F3\u30C8\u30C1\u30E3\u30FC\u30C8',
+    taskName: '\u30BF\u30B9\u30AF\u540D',
+    edit: '\u7DE8\u96C6',
+    view: '\u8868\u793A',
+    unit: '\u5358\u4F4D:',
+    month: '\u6708',
+    week: '\u9031',
+    day: '\u65E5',
+    font: '\u6587\u5B57:',
+    addColStart: '\u2190\u5217\u8FFD\u52A0',
+    addColEnd: '\u5217\u8FFD\u52A0\u2192',
+    rmColStart: '\u2190\u5217\u524A\u9664',
+    rmColEnd: '\u5217\u524A\u9664\u2192',
+    addRow: '\u884C\u8FFD\u52A0',
+    thunderLine: '\u30A4\u30CA\u30BA\u30DE\u7DDA',
+    baseDate: '\u57FA\u6E96\u65E5:',
+    range: '\u671F\u9593:',
+    allRange: '\u5168\u671F\u9593',
+    copyImage: '\u753B\u50CF\u30B3\u30D4\u30FC',
+    export: '\u30A8\u30AF\u30B9\u30DD\u30FC\u30C8',
+    import: '\u30A4\u30F3\u30DD\u30FC\u30C8',
+    cancel: '\u30AD\u30E3\u30F3\u30BB\u30EB',
+    ok: 'OK',
+    label: '\u30E9\u30D9\u30EB',
+    startDate: '\u958B\u59CB\u65E5',
+    endDate: '\u7D42\u4E86\u65E5',
+    color: '\u8272',
+    labelPos: '\u30E9\u30D9\u30EB\u4F4D\u7F6E',
+    posInside: '\u4E2D',
+    posAbove: '\u4E0A',
+    posBelow: '\u4E0B',
+    posLeft: '\u5DE6',
+    posRight: '\u53F3',
+    posBefore: '\u524D',
+    posAfter: '\u5F8C',
+    date: '\u65E5\u4ED8',
+    addTask: '\u4F5C\u696D\u3092\u8FFD\u52A0',
+    addMilestone: '\u30A4\u30D9\u30F3\u30C8\u3092\u8FFD\u52A0',
+    editTask: '\u4F5C\u696D\u3092\u7DE8\u96C6',
+    editMilestone: '\u30A4\u30D9\u30F3\u30C8\u3092\u7DE8\u96C6',
+    addProgress: '\u9032\u6357\u4F4D\u7F6E\u3092\u8FFD\u52A0',
+    deleteSelected: '\u9078\u629E\u9805\u76EE\u3092\u524A\u9664',
+    deleteRow: '\u884C\u524A\u9664',
+    addRowAbove: '\u4E0A\u306B\u884C\u8FFD\u52A0',
+    deleteItem: '\u524A\u9664',
+    editItem: '\u4F5C\u696D\u3092\u7DE8\u96C6\u2026',
+    editMilestoneItem: '\u30A4\u30D9\u30F3\u30C8\u3092\u7DE8\u96C6\u2026',
+    deleteProgress: '\u9032\u6357\u4F4D\u7F6E\u3092\u524A\u9664\uFF08\u57FA\u6E96\u65E5\u306B\u623B\u3059\uFF09',
+    visibleInView: '\u8868\u793A\u30E2\u30FC\u30C9\u3067\u8868\u793A',
+    hiddenInView: '\u8868\u793A\u30E2\u30FC\u30C9\u3067\u975E\u8868\u793A',
+    dragToReorder: '\u30C9\u30E9\u30C3\u30B0\u3067\u4E26\u3079\u66FF\u3048',
+    unnamed: '(\u672A\u8A2D\u5B9A)',
+    newTask: '\u65B0\u898F\u4F5C\u696D',
+    exported: '\u30A8\u30AF\u30B9\u30DD\u30FC\u30C8\u3057\u307E\u3057\u305F',
+    imported: '\u30A4\u30F3\u30DD\u30FC\u30C8\u3057\u307E\u3057\u305F',
+    imageCopied: '\u753B\u50CF\u3092\u30AF\u30EA\u30C3\u30D7\u30DC\u30FC\u30C9\u306B\u30B3\u30D4\u30FC\u3057\u307E\u3057\u305F',
+    imageDownloaded: '\u753B\u50CF\u3092\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u3057\u307E\u3057\u305F',
+    invalidFile: '\u7121\u52B9\u306A\u30D5\u30A1\u30A4\u30EB\u5F62\u5F0F\u3067\u3059\u3002',
+    jsonError: 'JSON\u306E\u8AAD\u307F\u8FBC\u307F\u306B\u5931\u6557\u3057\u307E\u3057\u305F: ',
+  }
+};
+
+let currentLang = 'en';
+
+function t(key) {
+  return (I18N[currentLang] && I18N[currentLang][key]) || I18N.en[key] || key;
+}
+
+function updateUIText() {
+  document.title = t('title');
+  document.documentElement.lang = currentLang;
+  document.getElementById('btn-edit-mode').textContent = t('edit');
+  document.getElementById('btn-view-mode').textContent = t('view');
+  document.getElementById('lbl-unit').textContent = t('unit');
+  document.getElementById('opt-month').textContent = t('month');
+  document.getElementById('opt-week').textContent = t('week');
+  document.getElementById('opt-day').textContent = t('day');
+  document.getElementById('lbl-font').textContent = t('font');
+  document.getElementById('btn-add-col-start').textContent = t('addColStart');
+  document.getElementById('btn-add-col-end').textContent = t('addColEnd');
+  document.getElementById('btn-rm-col-start').textContent = t('rmColStart');
+  document.getElementById('btn-rm-col-end').textContent = t('rmColEnd');
+  document.getElementById('btn-add-row').textContent = t('addRow');
+  document.getElementById('lbl-thunder').textContent = t('thunderLine');
+  document.getElementById('lbl-base-date').textContent = t('baseDate');
+  document.getElementById('lbl-range').textContent = t('range');
+  document.getElementById('btn-all-range').textContent = t('allRange');
+  document.getElementById('btn-copy-image').textContent = t('copyImage');
+  document.getElementById('btn-export').textContent = t('export');
+  document.getElementById('btn-import').textContent = t('import');
+  document.getElementById('gantt-corner').textContent = t('taskName');
+}
+
+function changeLang(lang) {
+  currentLang = lang;
+  state.lang = lang;
+  document.getElementById('sel-lang').value = lang;
+  updateUIText();
+  render();
+}
+
 // ===== State =====
 const _now = new Date();
 const _initStart = new Date(_now.getFullYear(), _now.getMonth() - 1, 1);
 const _initEnd = new Date(_now.getFullYear(), _now.getMonth() + 2, 0);
 let state = {
+  lang: 'en',
   timeUnit: 'month',
   startDate: fmtDate(_initStart),
   endDate: fmtDate(_initEnd),
   fontSize: 14,
   rows: [
-    { name: '作業1', items: [] },
-    { name: '作業2', items: [] },
-    { name: '作業3', items: [] }
+    { name: 'Task 1', items: [] },
+    { name: 'Task 2', items: [] },
+    { name: 'Task 3', items: [] }
   ],
   thunderLine: { visible: true, points: [], defaultDate: fmtDate(new Date()) }
 };
@@ -607,7 +780,7 @@ function renderSidebar() {
       const vis = document.createElement('span');
       vis.className = 'sidebar-visibility';
       vis.textContent = row.visible === false ? '🔇' : '👁';
-      vis.title = row.visible === false ? '表示モードで非表示' : '表示モードで表示';
+      vis.title = row.visible === false ? t('hiddenInView') : t('visibleInView');
       vis.onclick = () => {
         state.rows[ri].visible = !(row.visible !== false);
         render();
@@ -617,7 +790,7 @@ function renderSidebar() {
       const handle = document.createElement('span');
       handle.className = 'sidebar-drag-handle';
       handle.textContent = '☰';
-      handle.title = 'ドラッグで並べ替え';
+      handle.title = t('dragToReorder');
       handle.addEventListener('mousedown', e => startRowDrag(e, ri));
       div.appendChild(handle);
 
@@ -627,7 +800,7 @@ function renderSidebar() {
       nameEl.className = 'sidebar-name';
       nameEl.textContent = row.name;
       nameEl.contentEditable = true;
-      nameEl.addEventListener('blur', () => { state.rows[ri].name = nameEl.innerText.trim() || '(未設定)'; render(); });
+      nameEl.addEventListener('blur', () => { state.rows[ri].name = nameEl.innerText.trim() || t('unnamed'); render(); });
       nameEl.addEventListener('keydown', e => {
         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); nameEl.blur(); }
       });
@@ -637,12 +810,12 @@ function renderSidebar() {
       btns.className = 'sidebar-btns';
       const btnDel = document.createElement('button');
       btnDel.textContent = '×';
-      btnDel.title = '行削除';
+      btnDel.title = t('deleteRow');
       btnDel.onclick = () => { if(state.rows.length>1){state.rows.splice(ri,1);selectedItems=[];render();} };
       const btnUp = document.createElement('button');
       btnUp.textContent = '↑';
-      btnUp.title = '上に行追加';
-      btnUp.onclick = () => { state.rows.splice(ri,0,{name:'新規作業',items:[]});render(); };
+      btnUp.title = t('addRowAbove');
+      btnUp.onclick = () => { state.rows.splice(ri,0,{name:t('newTask'),items:[]});render(); };
       btns.appendChild(btnUp);
       btns.appendChild(btnDel);
       div.appendChild(btns);
@@ -856,8 +1029,8 @@ function renderTask(layer, item, ri, ii, rh, bh, ry) {
     el.addEventListener('contextmenu', e => {
       e.preventDefault(); e.stopPropagation();
       showContextMenu(e.clientX, e.clientY, [
-        { label: '作業を編集…', action: () => editItemDialog(ri, ii) },
-        { label: '削除', action: () => { state.rows[ri].items.splice(ii, 1); selectedItems = []; render(); } }
+        { label: t('editItem'), action: () => editItemDialog(ri, ii) },
+        { label: t('deleteItem'), action: () => { state.rows[ri].items.splice(ii, 1); selectedItems = []; render(); } }
       ]);
     });
   }
@@ -914,8 +1087,8 @@ function renderMilestone(layer, item, ri, ii, rh, ry) {
     el.addEventListener('contextmenu', e => {
       e.preventDefault(); e.stopPropagation();
       showContextMenu(e.clientX, e.clientY, [
-        { label: 'イベントを編集…', action: () => editItemDialog(ri, ii) },
-        { label: '削除', action: () => { state.rows[ri].items.splice(ii, 1); selectedItems = []; render(); } }
+        { label: t('editMilestoneItem'), action: () => editItemDialog(ri, ii) },
+        { label: t('deleteItem'), action: () => { state.rows[ri].items.splice(ii, 1); selectedItems = []; render(); } }
       ]);
     });
   }
@@ -1000,7 +1173,7 @@ function renderThunderLine() {
         e.preventDefault(); e.stopPropagation();
         if (c.explicit) {
           showContextMenu(e.clientX, e.clientY, [
-            { label: '進捗位置を削除（基準日に戻す）', action: () => { state.thunderLine.points.splice(c.explicitIndex, 1); render(); } }
+            { label: t('deleteProgress'), action: () => { state.thunderLine.points.splice(c.explicitIndex, 1); render(); } }
           ]);
         }
       });
@@ -1284,15 +1457,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const clickDateStr = fmtDate(clickDate);
 
     const menuItems = [
-      { label: `作業を追加 (${clickDateStr})`, action: () => addTaskDialog(ri, clickDateStr) },
-      { label: `イベントを追加 (${clickDateStr})`, action: () => addMilestoneDialog(ri, clickDateStr) },
+      { label: `${t('addTask')} (${clickDateStr})`, action: () => addTaskDialog(ri, clickDateStr) },
+      { label: `${t('addMilestone')} (${clickDateStr})`, action: () => addMilestoneDialog(ri, clickDateStr) },
       { sep: true },
-      { label: '進捗位置を追加', action: () => { addThunderPoint(ri, clickDateStr); } },
+      { label: t('addProgress'), action: () => { addThunderPoint(ri, clickDateStr); } },
     ];
 
     if (selectedItems.length > 0) {
       menuItems.push({ sep: true });
-      menuItems.push({ label: '選択項目を削除', action: () => deleteSelected() });
+      menuItems.push({ label: t('deleteSelected'), action: () => deleteSelected() });
     }
 
     showContextMenu(e.clientX, e.clientY, menuItems);
@@ -1392,7 +1565,7 @@ function showModal(title, fields, onOk) {
   const btns = document.createElement('div');
   btns.className = 'modal-btns';
   const btnCancel = document.createElement('button');
-  btnCancel.textContent = 'キャンセル';
+  btnCancel.textContent = t('cancel');
   btnCancel.onclick = () => overlay.remove();
   const btnOk = document.createElement('button');
   btnOk.className = 'btn-primary';
@@ -1416,22 +1589,24 @@ function showModal(title, fields, onOk) {
   if (firstInput) setTimeout(() => firstInput.focus(), 50);
 }
 
-const TASK_LABEL_POS_OPTIONS = [
-  { value: 'inside', label: '中' },
-  { value: 'above', label: '上' },
-  { value: 'below', label: '下' },
-  { value: 'left', label: '左' },
-  { value: 'right', label: '右' }
-];
+function getTaskLabelPosOptions() {
+  return [
+    { value: 'inside', label: t('posInside') },
+    { value: 'above', label: t('posAbove') },
+    { value: 'below', label: t('posBelow') },
+    { value: 'left', label: t('posLeft') },
+    { value: 'right', label: t('posRight') }
+  ];
+}
 
 function addTaskDialog(ri, dateStr) {
   const endDate = fmtDate(addDays(parseDate(dateStr), 30));
-  showModal('作業を追加', [
-    { key: 'label', label: 'ラベル', type: 'text', value: '' },
-    { key: 'startDate', label: '開始日', type: 'date', value: dateStr },
-    { key: 'endDate', label: '終了日', type: 'date', value: endDate },
-    { key: 'color', label: '色', type: 'color', value: COLORS[0] },
-    { key: 'taskLabelPosition', label: 'ラベル位置', type: 'select', value: 'inside', options: TASK_LABEL_POS_OPTIONS }
+  showModal(t('addTask'), [
+    { key: 'label', label: t('label'), type: 'text', value: '' },
+    { key: 'startDate', label: t('startDate'), type: 'date', value: dateStr },
+    { key: 'endDate', label: t('endDate'), type: 'date', value: endDate },
+    { key: 'color', label: t('color'), type: 'color', value: COLORS[0] },
+    { key: 'taskLabelPosition', label: t('labelPos'), type: 'select', value: 'inside', options: getTaskLabelPosOptions() }
   ], vals => {
     if (!vals.startDate || !vals.endDate) return;
     state.rows[ri].items.push({
@@ -1443,11 +1618,11 @@ function addTaskDialog(ri, dateStr) {
 }
 
 function addMilestoneDialog(ri, dateStr) {
-  showModal('イベントを追加', [
-    { key: 'label', label: 'ラベル', type: 'text', value: '' },
-    { key: 'date', label: '日付', type: 'date', value: dateStr },
-    { key: 'labelPosition', label: 'ラベル位置', type: 'select', value: 'after',
-      options: [{ value: 'before', label: '前' }, { value: 'after', label: '後' }] }
+  showModal(t('addMilestone'), [
+    { key: 'label', label: t('label'), type: 'text', value: '' },
+    { key: 'date', label: t('date'), type: 'date', value: dateStr },
+    { key: 'labelPosition', label: t('labelPos'), type: 'select', value: 'after',
+      options: [{ value: 'before', label: t('posBefore') }, { value: 'after', label: t('posAfter') }] }
   ], vals => {
     if (!vals.date) return;
     state.rows[ri].items.push({
@@ -1461,12 +1636,12 @@ function addMilestoneDialog(ri, dateStr) {
 function editItemDialog(ri, ii) {
   const item = state.rows[ri].items[ii];
   if (item.type === 'task') {
-    showModal('作業を編集', [
-      { key: 'label', label: 'ラベル', type: 'text', value: item.label },
-      { key: 'startDate', label: '開始日', type: 'date', value: item.startDate },
-      { key: 'endDate', label: '終了日', type: 'date', value: item.endDate },
-      { key: 'color', label: '色', type: 'color', value: item.color || COLORS[0] },
-      { key: 'taskLabelPosition', label: 'ラベル位置', type: 'select', value: item.taskLabelPosition || 'inside', options: TASK_LABEL_POS_OPTIONS }
+    showModal(t('editTask'), [
+      { key: 'label', label: t('label'), type: 'text', value: item.label },
+      { key: 'startDate', label: t('startDate'), type: 'date', value: item.startDate },
+      { key: 'endDate', label: t('endDate'), type: 'date', value: item.endDate },
+      { key: 'color', label: t('color'), type: 'color', value: item.color || COLORS[0] },
+      { key: 'taskLabelPosition', label: t('labelPos'), type: 'select', value: item.taskLabelPosition || 'inside', options: getTaskLabelPosOptions() }
     ], vals => {
       if (!vals.startDate || !vals.endDate) return;
       item.label = vals.label;
@@ -1477,11 +1652,11 @@ function editItemDialog(ri, ii) {
       render();
     });
   } else {
-    showModal('イベントを編集', [
-      { key: 'label', label: 'ラベル', type: 'text', value: item.label },
-      { key: 'date', label: '日付', type: 'date', value: item.date },
-      { key: 'labelPosition', label: 'ラベル位置', type: 'select', value: item.labelPosition || 'after',
-        options: [{ value: 'before', label: '前' }, { value: 'after', label: '後' }] }
+    showModal(t('editMilestone'), [
+      { key: 'label', label: t('label'), type: 'text', value: item.label },
+      { key: 'date', label: t('date'), type: 'date', value: item.date },
+      { key: 'labelPosition', label: t('labelPos'), type: 'select', value: item.labelPosition || 'after',
+        options: [{ value: 'before', label: t('posBefore') }, { value: 'after', label: t('posAfter') }] }
     ], vals => {
       if (!vals.date) return;
       item.label = vals.label;
@@ -1599,7 +1774,7 @@ function removeColumnEnd() {
 
 // ===== Row =====
 function addRow() {
-  state.rows.push({ name: '新規作業', items: [] });
+  state.rows.push({ name: t('newTask'), items: [] });
   render();
 }
 
@@ -1630,7 +1805,7 @@ function exportJSON() {
   a.download = 'gantt_chart.json';
   a.click();
   URL.revokeObjectURL(url);
-  showToast('エクスポートしました');
+  showToast(t('exported'));
 }
 
 function importJSON() {
@@ -1647,6 +1822,9 @@ function loadJSONFile(file) {
         if (!state.thunderLine) state.thunderLine = { visible: true, points: [], defaultDate: fmtDate(new Date()) };
         if (!state.thunderLine.defaultDate) state.thunderLine.defaultDate = fmtDate(new Date());
         if (!state.fontSize) state.fontSize = 14;
+        if (state.lang) { currentLang = state.lang; } else { state.lang = currentLang; }
+        document.getElementById('sel-lang').value = currentLang;
+        updateUIText();
         document.getElementById('sel-unit').value = state.timeUnit || 'month';
         document.getElementById('chk-thunder').checked = state.thunderLine.visible;
         document.getElementById('thunder-default-date').value = state.thunderLine.defaultDate;
@@ -1654,12 +1832,12 @@ function loadJSONFile(file) {
         customColWidth = null;
         viewRange = null;
         render();
-        showToast('インポートしました');
+        showToast(t('imported'));
       } else {
-        alert('無効なファイル形式です。');
+        alert(t('invalidFile'));
       }
     } catch (err) {
-      alert('JSONの読み込みに失敗しました: ' + err.message);
+      alert(t('jsonError') + err.message);
     }
   };
   reader.readAsText(file);
@@ -1678,7 +1856,7 @@ async function copyAsImage() {
   try {
     const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
     await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-    showToast('画像をクリップボードにコピーしました');
+    showToast(t('imageCopied'));
   } catch (err) {
     // Fallback: download
     canvas.toBlob(blob => {
@@ -1686,7 +1864,7 @@ async function copyAsImage() {
       const a = document.createElement('a');
       a.href = url; a.download = 'gantt_chart.png'; a.click();
       URL.revokeObjectURL(url);
-      showToast('画像をダウンロードしました');
+      showToast(t('imageDownloaded'));
     });
   }
 }
@@ -1783,7 +1961,7 @@ function renderToCanvas() {
   ctx.fillStyle = '#666';
   ctx.font = `bold ${fs * 0.85}px sans-serif`;
   ctx.textBaseline = 'middle';
-  ctx.fillText('タスク名', 8, hh / 2);
+  ctx.fillText(t('taskName'), 8, hh / 2);
 
   // Header labels
   ctx.font = `600 ${fs * 0.85}px sans-serif`;
@@ -2033,6 +2211,7 @@ function initSidebarResizeHandle() {
 document.addEventListener('DOMContentLoaded', () => {
   document.body.classList.add('edit-mode');
   document.getElementById('thunder-default-date').value = state.thunderLine.defaultDate;
+  updateUIText();
   initResizeHandle();
   initSidebarResizeHandle();
   render();
