@@ -80,6 +80,13 @@ body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; font-size
 #sidebar-resize-handle:hover, #sidebar-resize-handle.active {
   background: var(--accent); opacity: 0.4; border-radius: 2px;
 }
+#body-height-resize-handle {
+  position: absolute; bottom: 0; left: 0; width: 100%; height: 6px;
+  cursor: ns-resize; z-index: 20;
+}
+#body-height-resize-handle:hover, #body-height-resize-handle.active {
+  background: var(--accent); opacity: 0.4;
+}
 #gantt-corner {
   grid-row: 1; grid-column: 1;
   background: var(--header-bg);
@@ -355,6 +362,7 @@ body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; font-size
 
 <div id="gantt-wrapper">
   <div id="sidebar-resize-handle"></div>
+  <div id="body-height-resize-handle"></div>
   <div id="gantt-corner" contenteditable="true">Task</div>
   <div id="gantt-header-scroll"><div id="gantt-header"></div></div>
   <div id="gantt-sidebar-scroll"><div id="gantt-sidebar"></div></div>
@@ -556,6 +564,7 @@ let state = {
   cornerLabel: '',
   sidebarWidth: 180,
   colWidth: null,
+  bodyHeight: null,
   viewRange: null,
   rows: [
     { name: 'Task 1', items: [] },
@@ -571,6 +580,7 @@ let selectedItems = []; // [{rowIndex, itemIndex}]
 let columns = [];
 let colWidth = 80;
 let customColWidth = null; // user-set column width via drag resize
+let customBodyHeight = null; // user-set body height via drag resize
 let isDragging = false;
 let dragData = null;
 
@@ -690,6 +700,15 @@ function render() {
   renderHeader();
   renderSidebar();
   measureSidebarRowHeights();
+  applyCustomBodyHeight();
+  // Set wrapper height when custom body height is set
+  const wrapper = document.getElementById('gantt-wrapper');
+  if (customBodyHeight !== null) {
+    const hh = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--header-height'));
+    wrapper.style.height = (totalBodyHeight + hh) + 'px';
+  } else {
+    wrapper.style.height = '';
+  }
   renderBody();
   renderItems();
   renderThunderLine();
@@ -777,6 +796,37 @@ function measureSidebarRowHeights() {
     rowYOffsets[i] = y;
     y += rowHeights[i];
   });
+  totalBodyHeight = y;
+}
+
+function applyCustomBodyHeight() {
+  if (customBodyHeight === null || visibleRows.length === 0) return;
+  const naturalTotal = totalBodyHeight;
+  if (naturalTotal <= 0) return;
+  const targetH = Math.max(visibleRows.length * 20, customBodyHeight);
+  const scale = targetH / naturalTotal;
+  const sb = document.getElementById('gantt-sidebar');
+  const sidebarRows = sb.querySelectorAll('.sidebar-row');
+
+  // Apply scaled heights to sidebar rows
+  for (let i = 0; i < rowHeights.length; i++) {
+    rowHeights[i] = Math.round(rowHeights[i] * scale);
+    if (sidebarRows[i]) sidebarRows[i].style.height = rowHeights[i] + 'px';
+  }
+
+  // Re-measure: sidebar rows may not shrink below their content
+  // Use the actual rendered height as the floor
+  let y = 0;
+  for (let i = 0; i < rowHeights.length; i++) {
+    if (sidebarRows[i]) {
+      const actual = sidebarRows[i].offsetHeight;
+      if (actual > rowHeights[i]) {
+        rowHeights[i] = actual;
+      }
+    }
+    rowYOffsets[i] = y;
+    y += rowHeights[i];
+  }
   totalBodyHeight = y;
 }
 
@@ -1850,6 +1900,7 @@ function clearViewRange() {
 function exportJSON() {
   state.sidebarWidth = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-width'));
   state.colWidth = customColWidth;
+  state.bodyHeight = customBodyHeight;
   state.viewRange = viewRange;
   const json = JSON.stringify(state, null, 2);
   const blob = new Blob([json], { type: 'application/json' });
@@ -1895,8 +1946,9 @@ function loadJSONFile(file) {
         if (state.sidebarWidth) {
           document.documentElement.style.setProperty('--sidebar-width', state.sidebarWidth + 'px');
         }
-        // Restore column width & view range
+        // Restore column width, body height & view range
         customColWidth = state.colWidth || null;
+        customBodyHeight = state.bodyHeight || null;
         viewRange = state.viewRange || null;
         if (viewRange) {
           document.getElementById('view-start').value = viewRange.start;
@@ -2279,6 +2331,36 @@ function initSidebarResizeHandle() {
   });
 }
 
+// ===== Body Height Resize Handle =====
+function initBodyHeightResizeHandle() {
+  const handle = document.getElementById('body-height-resize-handle');
+
+  handle.addEventListener('mousedown', e => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const startY = e.clientY;
+    const startHeight = totalBodyHeight;
+    handle.classList.add('active');
+
+    function onMove(ev) {
+      const dy = ev.clientY - startY;
+      const newHeight = Math.max(visibleRows.length * 20, startHeight + dy);
+      customBodyHeight = newHeight;
+      render();
+    }
+
+    function onUp() {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      handle.classList.remove('active');
+    }
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}
+
 // ===== Init =====
 document.addEventListener('DOMContentLoaded', () => {
   document.body.classList.add('edit-mode');
@@ -2286,6 +2368,7 @@ document.addEventListener('DOMContentLoaded', () => {
   updateUIText();
   initResizeHandle();
   initSidebarResizeHandle();
+  initBodyHeightResizeHandle();
 
   // Corner label editing
   const corner = document.getElementById('gantt-corner');
