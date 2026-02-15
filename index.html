@@ -554,6 +554,9 @@ let state = {
   endDate: fmtDate(_initEnd),
   fontSize: 14,
   cornerLabel: '',
+  sidebarWidth: 180,
+  colWidth: null,
+  viewRange: null,
   rows: [
     { name: 'Task 1', items: [] },
     { name: 'Task 2', items: [] },
@@ -1701,15 +1704,12 @@ function setMode(mode) {
   document.body.classList.toggle('edit-mode', mode === 'edit');
   document.body.classList.toggle('view-mode', mode === 'view');
 
-  customColWidth = null;
   if (mode === 'view') {
     clearSelection();
     if (!viewRange) {
       document.getElementById('view-start').value = state.startDate;
       document.getElementById('view-end').value = state.endDate;
     }
-  } else {
-    viewRange = null;
   }
   render();
 }
@@ -1811,6 +1811,9 @@ function clearViewRange() {
 
 // ===== Export / Import =====
 function exportJSON() {
+  state.sidebarWidth = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-width'));
+  state.colWidth = customColWidth;
+  state.viewRange = viewRange;
   const json = JSON.stringify(state, null, 2);
   const blob = new Blob([json], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -1851,9 +1854,18 @@ function loadJSONFile(file) {
         document.getElementById('sel-unit').value = state.timeUnit || 'month';
         document.getElementById('chk-thunder').checked = state.thunderLine.visible;
         document.getElementById('thunder-default-date').value = state.thunderLine.defaultDate;
+        // Restore sidebar width
+        if (state.sidebarWidth) {
+          document.documentElement.style.setProperty('--sidebar-width', state.sidebarWidth + 'px');
+        }
+        // Restore column width & view range
+        customColWidth = state.colWidth || null;
+        viewRange = state.viewRange || null;
+        if (viewRange) {
+          document.getElementById('view-start').value = viewRange.start;
+          document.getElementById('view-end').value = viewRange.end;
+        }
         selectedItems = [];
-        customColWidth = null;
-        viewRange = null;
         render();
         showToast(t('imported'));
       } else {
