@@ -64,6 +64,13 @@ body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; font-size
   overflow: hidden;
   box-shadow: 0 2px 8px rgba(0,0,0,.07);
 }
+#gantt-resize-handle {
+  position: absolute; top: 0; width: 8px; height: 100%;
+  cursor: col-resize; z-index: 20;
+}
+#gantt-resize-handle:hover, #gantt-resize-handle.active {
+  background: var(--accent); opacity: 0.4; border-radius: 2px;
+}
 #gantt-corner {
   grid-row: 1; grid-column: 1;
   background: var(--header-bg);
@@ -330,6 +337,7 @@ body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; font-size
       <div id="grid-layer"></div>
       <div id="items-layer"></div>
       <svg id="thunder-svg"></svg>
+      <div id="gantt-resize-handle"></div>
     </div>
   </div>
 </div>
@@ -362,6 +370,7 @@ let viewRange = null; // {start, end}
 let selectedItems = []; // [{rowIndex, itemIndex}]
 let columns = [];
 let colWidth = 80;
+let customColWidth = null; // user-set column width via drag resize
 let isDragging = false;
 let dragData = null;
 
@@ -456,13 +465,17 @@ function render() {
   const ed = viewRange ? viewRange.end : state.endDate;
   columns = generateColumns(sd, ed, state.timeUnit);
 
-  // In view mode, fit to container
-  const bodyScroll = document.getElementById('gantt-body-scroll');
-  if (appMode === 'view' && viewRange) {
-    const avail = bodyScroll.clientWidth || (window.innerWidth - parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-width')) - 30);
-    colWidth = Math.max(30, Math.floor(avail / columns.length));
+  // Column width: use custom value if set, otherwise default
+  if (customColWidth !== null) {
+    colWidth = customColWidth;
   } else {
-    colWidth = state.timeUnit === 'day' ? 36 : (state.timeUnit === 'week' ? 52 : 80);
+    const bodyScroll = document.getElementById('gantt-body-scroll');
+    if (appMode === 'view' && viewRange) {
+      const avail = bodyScroll.clientWidth || (window.innerWidth - parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-width')) - 30);
+      colWidth = Math.max(30, Math.floor(avail / columns.length));
+    } else {
+      colWidth = state.timeUnit === 'day' ? 36 : (state.timeUnit === 'week' ? 52 : 80);
+    }
   }
 
   document.documentElement.style.setProperty('--col-width', colWidth + 'px');
@@ -709,6 +722,10 @@ function renderBody() {
   const body = document.getElementById('gantt-body');
   body.style.width = totalW + 'px';
   body.style.height = totalBodyHeight + 'px';
+
+  // Position resize handle at right edge of last column
+  const resizeHandle = document.getElementById('gantt-resize-handle');
+  resizeHandle.style.left = (totalW - 4) + 'px';
   let prevYear = null;
   visibleRows.forEach((entry, vi) => {
     const rowDiv = document.createElement('div');
@@ -1458,6 +1475,7 @@ function setMode(mode) {
   document.body.classList.toggle('edit-mode', mode === 'edit');
   document.body.classList.toggle('view-mode', mode === 'view');
 
+  customColWidth = null;
   if (mode === 'view') {
     clearSelection();
     if (!viewRange) {
@@ -1473,6 +1491,7 @@ function setMode(mode) {
 // ===== Time Unit =====
 function changeUnit(unit) {
   state.timeUnit = unit;
+  customColWidth = null;
   render();
 }
 
@@ -1837,10 +1856,47 @@ function showToast(msg) {
   setTimeout(() => { toast.style.display = 'none'; }, 2000);
 }
 
+// ===== Resize Handle (drag right edge of last column to change column width) =====
+function initResizeHandle() {
+  const handle = document.getElementById('gantt-resize-handle');
+
+  handle.addEventListener('mousedown', e => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startTotalW = columns.length * colWidth;
+    const numCols = columns.length;
+    handle.classList.add('active');
+
+    function onMove(ev) {
+      const dx = ev.clientX - startX;
+      const newTotalW = Math.max(numCols * 20, startTotalW + dx);
+      const newCW = Math.max(20, Math.round(newTotalW / numCols));
+      if (newCW !== colWidth) {
+        customColWidth = newCW;
+        colWidth = newCW;
+        document.documentElement.style.setProperty('--col-width', colWidth + 'px');
+        render();
+      }
+    }
+
+    function onUp() {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      handle.classList.remove('active');
+    }
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}
+
 // ===== Init =====
 document.addEventListener('DOMContentLoaded', () => {
   document.body.classList.add('edit-mode');
   document.getElementById('thunder-default-date').value = state.thunderLine.defaultDate;
+  initResizeHandle();
   render();
 });
 
