@@ -4,7 +4,8 @@
 
 ## 使い方
 
-`index.html` をブラウザで開くだけで利用できます。
+https://sougyo.github.io/GanttChart/ にアクセスしてください。
+あるいは、 `index.html` をブラウザで開くだけで利用できます。
 
 ## 機能一覧
 
