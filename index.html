@@ -1709,7 +1709,7 @@ function renderToCanvas() {
   const ctx = canvas.getContext('2d');
   ctx.scale(dpr, dpr);
 
-  // Background
+  // ===== Pass 1: Backgrounds =====
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, totalW, totalH);
 
@@ -1717,7 +1717,69 @@ function renderToCanvas() {
   ctx.fillStyle = '#f0f4f8';
   ctx.fillRect(0, 0, totalW, hh);
 
-  // Corner
+  // Weekend column backgrounds
+  columns.forEach((col, i) => {
+    if (col.weekend) {
+      const x = sw + i * colWidth;
+      ctx.fillStyle = '#fff3e0';
+      ctx.fillRect(x, 0, colWidth, totalH);
+    }
+  });
+
+  // Row backgrounds
+  visibleRows.forEach((entry, vi) => {
+    const rh = rowHeights[vi];
+    const y = hh + rowYOffsets[vi];
+    ctx.fillStyle = vi % 2 === 0 ? '#fafbfc' : '#fff';
+    ctx.fillRect(0, y, sw, rh);
+  });
+
+  // ===== Pass 2: Grid lines =====
+  // Column vertical lines (body)
+  ctx.strokeStyle = '#e8e8e8';
+  ctx.lineWidth = 1;
+  columns.forEach((col, i) => {
+    const x = sw + i * colWidth;
+    ctx.beginPath(); ctx.moveTo(x + colWidth, hh); ctx.lineTo(x + colWidth, totalH); ctx.stroke();
+  });
+
+  // Column vertical lines (header)
+  ctx.strokeStyle = '#d0d0d0';
+  ctx.lineWidth = 1;
+  columns.forEach((col, i) => {
+    const x = sw + i * colWidth;
+    ctx.beginPath(); ctx.moveTo(x + colWidth, 0); ctx.lineTo(x + colWidth, hh); ctx.stroke();
+  });
+
+  // Year-start vertical lines (thicker)
+  let prevYear = null;
+  columns.forEach((col, i) => {
+    const x = sw + i * colWidth;
+    if (col.year !== prevYear && i > 0) {
+      ctx.strokeStyle = '#bbb';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, totalH); ctx.stroke();
+    }
+    prevYear = col.year;
+  });
+
+  // Row horizontal lines
+  ctx.strokeStyle = '#d0d0d0';
+  ctx.lineWidth = 1;
+  visibleRows.forEach((entry, vi) => {
+    const rh = rowHeights[vi];
+    const y = hh + rowYOffsets[vi];
+    ctx.beginPath(); ctx.moveTo(0, y + rh); ctx.lineTo(totalW, y + rh); ctx.stroke();
+  });
+
+  // Header bottom line & Sidebar border
+  ctx.strokeStyle = '#bbb';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(0, hh); ctx.lineTo(totalW, hh); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(sw, 0); ctx.lineTo(sw, totalH); ctx.stroke();
+
+  // ===== Pass 3: Text & Items =====
+  // Corner label
   ctx.fillStyle = '#666';
   ctx.font = `bold ${fs * 0.85}px sans-serif`;
   ctx.textBaseline = 'middle';
@@ -1725,19 +1787,9 @@ function renderToCanvas() {
 
   // Header labels
   ctx.font = `600 ${fs * 0.85}px sans-serif`;
-  ctx.fillStyle = '#555';
-  let prevYear = null;
+  prevYear = null;
   columns.forEach((col, i) => {
     const x = sw + i * colWidth;
-    // Weekend background
-    if (col.weekend) {
-      ctx.fillStyle = '#fff3e0';
-      ctx.fillRect(x, 0, colWidth, totalH);
-    }
-    // grid line
-    ctx.strokeStyle = '#d0d0d0';
-    ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, totalH); ctx.stroke();
     let lbl = col.label;
     if (col.year !== prevYear) {
       if (state.timeUnit === 'month') lbl = col.year + '/' + lbl;
@@ -1747,28 +1799,11 @@ function renderToCanvas() {
     ctx.fillText(lbl, x + 4, hh / 2 + 4);
   });
 
-  // Header bottom line
-  ctx.strokeStyle = '#bbb';
-  ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.moveTo(0, hh); ctx.lineTo(totalW, hh); ctx.stroke();
-
-  // Sidebar border
-  ctx.beginPath(); ctx.moveTo(sw, 0); ctx.lineTo(sw, totalH); ctx.stroke();
-
-  // Rows
+  // Rows: names & items
   visibleRows.forEach((entry, vi) => {
     const row = entry.row;
     const rh = rowHeights[vi];
     const y = hh + rowYOffsets[vi];
-
-    // Row background
-    ctx.fillStyle = vi % 2 === 0 ? '#fafbfc' : '#fff';
-    ctx.fillRect(0, y, totalW, rh);
-
-    // Row border
-    ctx.strokeStyle = '#d0d0d0';
-    ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(0, y + rh); ctx.lineTo(totalW, y + rh); ctx.stroke();
 
     // Row name (with wrapping and explicit line breaks)
     ctx.fillStyle = '#333';
