@@ -1,98 +1,106 @@
 # Gantt Chart Tool
 
-ブラウザで動作するガントチャート作成ツールです。単一の HTML ファイルで構成されており、サーバー不要でローカルでも利用できます。
+A browser-based Gantt chart tool built as a single HTML file. No server required — just open `index.html` locally or visit the hosted version.
 
-## 使い方
+## Usage
 
-https://sougyo.github.io/GanttChart/ にアクセスしてください。
-あるいは、 `index.html` をブラウザで開くだけで利用できます。
+Visit https://sougyo.github.io/GanttChart/ or open `index.html` in your browser.
 
 <img src="doc/sample.gif" alt="sample">
 
-## 機能一覧
+## Features
 
-### 基本
+### General
 
-- **編集モード / 表示モード** の切り替え
-- **時間単位** を月・週・日で切り替え（デフォルト: 月）
-- **フォントサイズ** の一律調整（A- / A+ ボタン）
-- **エクスポート / インポート** で JSON 形式の保存・読み込み
+- **Edit / View mode** toggle
+- **Time unit** switching: Month, Week, or Day (default: Month)
+- **Font size** adjustment (A- / A+ buttons)
+- **Export / Import** project data as JSON (filename: `YYYYMMDD-hhmmss.json`)
+- **Multi-language support**: English (default) and Japanese, switchable via toolbar selector
+- **Resizable sidebar**: drag the border between the task name column and the date columns to adjust width
+- **Task name wrapping**: long task names wrap within the sidebar; use Shift+Enter for explicit line breaks
+- **Editable corner label**: click the top-left cell to customize the column header (e.g. "Task", "Phase")
 
-### 編集モード
+### Edit Mode
 
-- 右クリックメニューから **作業**（長方形）や **イベント**（▽マーク）を追加
-- 作業・イベントの **ダブルクリックでラベルをインライン編集**
-- 右クリックから日付・色などの **詳細編集ダイアログ** を表示
-- 作業バーの **ドラッグ移動**、端の **ドラッグリサイズ**
-- **Ctrl+クリック** で複数選択し、まとめてドラッグ移動
-- **Delete / Backspace** キーで選択項目を削除
-- タスク名をクリックして直接編集
-- 列の追加・削除（両端から）、行の追加・削除
-- 行の **ドラッグ並べ替え**（☰ ハンドル）
-- 行ごとの **表示モード可視性トグル**（👁 アイコン）
-- 長い期間はスクロールで閲覧
+- Right-click to add **tasks** (bars) or **milestones** (▽ markers)
+- **Double-click** a task or milestone label for inline editing
+- Right-click for a **detail dialog** to edit dates, color, label position, etc.
+- **Drag** task bars to move them; **drag edges** to resize
+- **Ctrl+Click** for multi-select, then drag to move together
+- **Delete / Backspace** to remove selected items
+- Click task names in the sidebar to edit directly
+- Add/remove columns (from either end) and rows
+- **Drag to reorder** rows (☰ handle)
+- **Visibility toggle** per row (👁 icon) — controls whether the row appears in View mode
 
-### イベント（マイルストーン）
+### Milestones
 
-- **▽** マークで特定日を表現
-- ラベルを前または後に配置可能
-- 日付単位表示ではセルの中央に配置
+- Represented by a **▽** marker on a specific date
+- Label can be placed before or after the marker
 
-### 作業（タスクバー）
+### Tasks (Bars)
 
-- 長方形で期間を表現
-- 長方形の中にラベルを表示
-- 10 色から色を選択可能
-- 日付単位を意識した配置（列追加で表示位置が変わっても日付は保持）
+- Rectangular bars representing a time period
+- Label displayed inside, above, below, left, or right of the bar
+- 10 color options available
+- Date-aware positioning (dates are preserved when columns are added/removed)
 
-### イナズマ線（進捗管理線）
+### Progress Line
 
-- **基準日**（デフォルト: 今日）を設定
-- 各行に進捗の点を設定し、赤い折れ線で接続
-- 点が未設定の行は基準日の位置をデフォルトとして使用
-- 行の境界は基準日の x 座標を通り、各行の点と斜線で結ぶ
-- 点は **マウスドラッグ** で移動可能
-- チェックボックスで **表示 / 非表示** を切り替え
+- Set a **base date** (default: today)
+- Place progress points on each row, connected by a red polyline
+- Rows without explicit points default to the base date position
+- The line zigzags between each row's progress point and the base date at row boundaries
+- Points are **draggable** with the mouse
+- Toggle visibility with a checkbox
+- **Reset All** button to clear all progress points at once
 
-### 表示モード
+### View Mode
 
-- 見た目を重視したレンダリング
-- **期間指定** で特定範囲のみ表示（1 ページに収まるよう自動調整）
-- **画像コピー** ボタンでクリップボードに PNG としてコピー
-- 非表示設定の行を除外して表示
+- Presentation-quality rendering
+- **Date range** filter to display a specific period (columns auto-fit to width)
+- **Copy Image** button to copy the chart as PNG to the clipboard
+- Rows marked as hidden in Edit mode are excluded
 
-## 技術スタック
+## Tech Stack
 
-- HTML / CSS / JavaScript（Vanilla）
-- 外部ライブラリ依存なし
-- 単一ファイル構成（`index.html` のみ）
+- HTML / CSS / JavaScript (Vanilla)
+- No external dependencies
+- Single file (`index.html`)
 
-## データ形式
+## Data Format
 
-エクスポートされる JSON の構造:
+Exported JSON structure:
 
 ```json
 {
+  "lang": "en",
   "timeUnit": "month",
   "startDate": "2026-01-01",
   "endDate": "2026-12-31",
   "fontSize": 14,
+  "cornerLabel": "",
+  "sidebarWidth": 180,
+  "colWidth": null,
+  "viewRange": null,
   "rows": [
     {
-      "name": "作業名",
+      "name": "Task name",
       "visible": true,
       "items": [
         {
           "type": "task",
           "startDate": "2026-02-01",
           "endDate": "2026-04-30",
-          "label": "開発",
-          "color": "#4CAF50"
+          "label": "Development",
+          "color": "#4CAF50",
+          "taskLabelPosition": "inside"
         },
         {
           "type": "milestone",
           "date": "2026-05-15",
-          "label": "リリース",
+          "label": "Release",
           "labelPosition": "after"
         }
       ]
@@ -108,8 +116,8 @@ https://sougyo.github.io/GanttChart/ にアクセスしてください。
 }
 ```
 
-## ライセンス
+## License
 
 Copyright 2026 Shogo Matsumoto
 
-Apache License 2.0 で提供されています。詳細は [LICENSE](LICENSE) ファイルを参照してください。
+Licensed under the Apache License 2.0. See the [LICENSE](LICENSE) file for details.
