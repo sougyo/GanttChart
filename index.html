@@ -341,10 +341,13 @@ body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; font-size
 
 <script>
 // ===== State =====
+const _now = new Date();
+const _initStart = new Date(_now.getFullYear(), _now.getMonth() - 1, 1);
+const _initEnd = new Date(_now.getFullYear(), _now.getMonth() + 2, 0);
 let state = {
   timeUnit: 'month',
-  startDate: '2026-01-01',
-  endDate: '2026-12-31',
+  startDate: fmtDate(_initStart),
+  endDate: fmtDate(_initEnd),
   fontSize: 14,
   rows: [
     { name: '作業1', items: [] },
