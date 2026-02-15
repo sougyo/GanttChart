@@ -328,6 +328,7 @@ body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; font-size
     <label><input type="checkbox" id="chk-thunder" checked onchange="toggleThunder(this.checked)"> <span id="lbl-thunder"></span></label>
     <label id="lbl-base-date"></label>
     <input type="date" id="thunder-default-date" onchange="changeThunderDefault(this.value)">
+    <button id="btn-reset-progress" onclick="resetProgressPoints()"></button>
   </div>
   <div class="toolbar-group" id="view-controls" style="display:none;">
     <label id="lbl-range"></label>
@@ -424,6 +425,7 @@ const I18N = {
     editItem: 'Edit Task\u2026',
     editMilestoneItem: 'Edit Milestone\u2026',
     deleteProgress: 'Reset Progress (use base date)',
+    resetAllProgress: 'Reset All',
     visibleInView: 'Visible in View mode',
     hiddenInView: 'Hidden in View mode',
     dragToReorder: 'Drag to reorder',
@@ -485,6 +487,7 @@ const I18N = {
     editItem: '\u4F5C\u696D\u3092\u7DE8\u96C6\u2026',
     editMilestoneItem: '\u30A4\u30D9\u30F3\u30C8\u3092\u7DE8\u96C6\u2026',
     deleteProgress: '\u9032\u6357\u4F4D\u7F6E\u3092\u524A\u9664\uFF08\u57FA\u6E96\u65E5\u306B\u623B\u3059\uFF09',
+    resetAllProgress: '\u5168\u30EA\u30BB\u30C3\u30C8',
     visibleInView: '\u8868\u793A\u30E2\u30FC\u30C9\u3067\u8868\u793A',
     hiddenInView: '\u8868\u793A\u30E2\u30FC\u30C9\u3067\u975E\u8868\u793A',
     dragToReorder: '\u30C9\u30E9\u30C3\u30B0\u3067\u4E26\u3079\u66FF\u3048',
@@ -521,6 +524,7 @@ function updateUIText() {
   document.getElementById('btn-rm-col-end').textContent = t('rmColEnd');
   document.getElementById('btn-add-row').textContent = t('addRow');
   document.getElementById('lbl-thunder').textContent = t('thunderLine');
+  document.getElementById('btn-reset-progress').textContent = t('resetAllProgress');
   document.getElementById('lbl-base-date').textContent = t('baseDate');
   document.getElementById('lbl-range').textContent = t('range');
   document.getElementById('btn-all-range').textContent = t('allRange');
@@ -1508,6 +1512,11 @@ function toggleThunder(visible) {
 
 function changeThunderDefault(dateStr) {
   state.thunderLine.defaultDate = dateStr;
+  render();
+}
+
+function resetProgressPoints() {
+  state.thunderLine.points = [];
   render();
 }
 
