@@ -102,6 +102,12 @@ body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; font-size
   cursor: pointer; font-size: 14px; color: #888; border-radius: 3px; line-height: 20px; padding: 0;
 }
 .sidebar-btns button:hover { background: #ddd; color: #333; }
+.sidebar-visibility {
+  cursor: pointer; font-size: 14px; flex-shrink: 0; width: 20px; text-align: center;
+  user-select: none; color: #888; line-height: var(--row-height); opacity: 0.7;
+}
+.sidebar-visibility:hover { opacity: 1; }
+.sidebar-row.row-hidden .sidebar-name { color: #bbb; text-decoration: line-through; }
 .sidebar-drag-handle {
   cursor: grab; color: #bbb; font-size: 14px; padding: 0 2px;
   user-select: none; line-height: var(--row-height); flex-shrink: 0;
@@ -437,12 +443,25 @@ function render() {
   document.documentElement.style.setProperty('--col-width', colWidth + 'px');
   document.documentElement.style.setProperty('--font-size', state.fontSize + 'px');
 
+  visibleRows = getVisibleRows();
   renderHeader();
   renderSidebar();
   renderBody();
   renderItems();
   renderThunderLine();
 }
+
+// Returns array of {row, originalIndex} for rows to display
+function getVisibleRows() {
+  if (appMode === 'edit') {
+    return state.rows.map((r, i) => ({ row: r, originalIndex: i }));
+  }
+  return state.rows
+    .map((r, i) => ({ row: r, originalIndex: i }))
+    .filter(entry => entry.row.visible !== false);
+}
+
+let visibleRows = [];
 
 function renderHeader() {
   const hdr = document.getElementById('gantt-header');
@@ -468,28 +487,41 @@ function renderHeader() {
 function renderSidebar() {
   const sb = document.getElementById('gantt-sidebar');
   sb.innerHTML = '';
-  state.rows.forEach((row, ri) => {
-    const div = document.createElement('div');
-    div.className = 'sidebar-row';
-    div.dataset.rowIndex = ri;
 
-    if (appMode === 'edit') {
+  if (appMode === 'edit') {
+    // Edit mode: show all rows with visibility toggle
+    state.rows.forEach((row, ri) => {
+      const div = document.createElement('div');
+      div.className = 'sidebar-row';
+      div.dataset.rowIndex = ri;
+
+      const vis = document.createElement('span');
+      vis.className = 'sidebar-visibility';
+      vis.textContent = row.visible === false ? '🔇' : '👁';
+      vis.title = row.visible === false ? '表示モードで非表示' : '表示モードで表示';
+      vis.onclick = () => {
+        state.rows[ri].visible = !(row.visible !== false);
+        render();
+      };
+      div.appendChild(vis);
+
       const handle = document.createElement('span');
       handle.className = 'sidebar-drag-handle';
       handle.textContent = '☰';
       handle.title = 'ドラッグで並べ替え';
       handle.addEventListener('mousedown', e => startRowDrag(e, ri));
       div.appendChild(handle);
-    }
 
-    const nameEl = document.createElement('span');
-    nameEl.className = 'sidebar-name';
-    nameEl.textContent = row.name;
-    nameEl.contentEditable = appMode === 'edit';
-    nameEl.addEventListener('blur', () => { state.rows[ri].name = nameEl.textContent.trim() || '(未設定)'; });
-    nameEl.addEventListener('keydown', e => { if(e.key==='Enter'){e.preventDefault();nameEl.blur();} });
-    div.appendChild(nameEl);
-    if (appMode === 'edit') {
+      if (row.visible === false) div.classList.add('row-hidden');
+
+      const nameEl = document.createElement('span');
+      nameEl.className = 'sidebar-name';
+      nameEl.textContent = row.name;
+      nameEl.contentEditable = true;
+      nameEl.addEventListener('blur', () => { state.rows[ri].name = nameEl.textContent.trim() || '(未設定)'; });
+      nameEl.addEventListener('keydown', e => { if(e.key==='Enter'){e.preventDefault();nameEl.blur();} });
+      div.appendChild(nameEl);
+
       const btns = document.createElement('div');
       btns.className = 'sidebar-btns';
       const btnDel = document.createElement('button');
@@ -503,9 +535,22 @@ function renderSidebar() {
       btns.appendChild(btnUp);
       btns.appendChild(btnDel);
       div.appendChild(btns);
-    }
-    sb.appendChild(div);
-  });
+
+      sb.appendChild(div);
+    });
+  } else {
+    // View mode: show only visible rows
+    visibleRows.forEach(entry => {
+      const div = document.createElement('div');
+      div.className = 'sidebar-row';
+      const nameEl = document.createElement('span');
+      nameEl.className = 'sidebar-name';
+      nameEl.textContent = entry.row.name;
+      nameEl.contentEditable = false;
+      div.appendChild(nameEl);
+      sb.appendChild(div);
+    });
+  }
 }
 
 // ===== Row Drag & Drop =====
@@ -599,13 +644,14 @@ function moveRow(from, to) {
 function renderBody() {
   const grid = document.getElementById('grid-layer');
   grid.innerHTML = '';
+  const rh = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--row-height'));
   const totalW = columns.length * colWidth;
-  const totalH = state.rows.length * parseInt(getComputedStyle(document.documentElement).getPropertyValue('--row-height'));
+  const totalH = visibleRows.length * rh;
   const body = document.getElementById('gantt-body');
   body.style.width = totalW + 'px';
   body.style.height = totalH + 'px';
   let prevYear = null;
-  state.rows.forEach((row, ri) => {
+  visibleRows.forEach((entry, vi) => {
     const rowDiv = document.createElement('div');
     rowDiv.className = 'body-row';
     prevYear = null;
@@ -628,23 +674,25 @@ function renderItems() {
   const rh = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--row-height'));
   const bh = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--bar-height'));
 
-  state.rows.forEach((row, ri) => {
-    row.items.forEach((item, ii) => {
+  visibleRows.forEach((entry, vi) => {
+    const ri = entry.originalIndex;
+    entry.row.items.forEach((item, ii) => {
       if (item.type === 'task') {
-        renderTask(layer, item, ri, ii, rh, bh);
+        renderTask(layer, item, ri, ii, rh, bh, vi);
       } else if (item.type === 'milestone') {
-        renderMilestone(layer, item, ri, ii, rh);
+        renderMilestone(layer, item, ri, ii, rh, vi);
       }
     });
   });
 }
 
-function renderTask(layer, item, ri, ii, rh, bh) {
+function renderTask(layer, item, ri, ii, rh, bh, vi) {
   const x1 = getXForDate(item.startDate, columns, colWidth);
   const x2 = getXForDateEnd(item.endDate, columns, colWidth);
   if (x2 < 0 || x1 > columns.length * colWidth) return;
   const w = Math.max(x2 - x1, 6);
-  const top = ri * rh + (rh - bh) / 2;
+  const displayRow = vi !== undefined ? vi : ri;
+  const top = displayRow * rh + (rh - bh) / 2;
 
   const el = document.createElement('div');
   el.className = 'gantt-item gantt-task';
@@ -692,10 +740,11 @@ function renderTask(layer, item, ri, ii, rh, bh) {
   layer.appendChild(el);
 }
 
-function renderMilestone(layer, item, ri, ii, rh) {
+function renderMilestone(layer, item, ri, ii, rh, vi) {
   const x = getXForDateCenter(item.date, columns, colWidth);
   if (x < 0 || x > columns.length * colWidth) return;
-  const top = ri * rh + rh / 2;
+  const displayRow = vi !== undefined ? vi : ri;
+  const top = displayRow * rh + rh / 2;
 
   const el = document.createElement('div');
   el.className = 'gantt-item gantt-milestone';
@@ -751,20 +800,21 @@ function renderMilestone(layer, item, ri, ii, rh) {
 }
 
 function getThunderPointsForRender() {
-  // Build a point for every row: use explicit point if exists, otherwise default date
+  // Build a point for every visible row: use explicit point if exists, otherwise default date
   const defDate = state.thunderLine.defaultDate || fmtDate(new Date());
   const explicitMap = {};
   state.thunderLine.points.forEach((p, i) => {
     explicitMap[p.rowIndex] = { date: p.date, explicitIndex: i };
   });
   const allPoints = [];
-  for (let ri = 0; ri < state.rows.length; ri++) {
+  visibleRows.forEach((entry, vi) => {
+    const ri = entry.originalIndex;
     if (explicitMap[ri] !== undefined) {
-      allPoints.push({ rowIndex: ri, date: explicitMap[ri].date, explicit: true, explicitIndex: explicitMap[ri].explicitIndex });
+      allPoints.push({ rowIndex: ri, displayIndex: vi, date: explicitMap[ri].date, explicit: true, explicitIndex: explicitMap[ri].explicitIndex });
     } else {
-      allPoints.push({ rowIndex: ri, date: defDate, explicit: false, explicitIndex: -1 });
+      allPoints.push({ rowIndex: ri, displayIndex: vi, date: defDate, explicit: false, explicitIndex: -1 });
     }
-  }
+  });
   return allPoints;
 }
 
@@ -772,37 +822,30 @@ function renderThunderLine() {
   const svg = document.getElementById('thunder-svg');
   const rh = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--row-height'));
   const totalW = columns.length * colWidth;
-  const totalH = state.rows.length * rh;
+  const totalH = visibleRows.length * rh;
   svg.setAttribute('width', totalW);
   svg.setAttribute('height', totalH);
   svg.innerHTML = '';
 
-  if (!state.thunderLine.visible || state.rows.length === 0) return;
+  if (!state.thunderLine.visible || visibleRows.length === 0) return;
 
   const pts = getThunderPointsForRender();
   const coords = pts.map(p => ({
     x: getXForDateCenter(p.date, columns, colWidth),
-    y: p.rowIndex * rh + rh / 2,
+    y: p.displayIndex * rh + rh / 2,
     explicit: p.explicit,
     explicitIndex: p.explicitIndex,
-    rowIndex: p.rowIndex
+    rowIndex: p.rowIndex,
+    displayIndex: p.displayIndex
   }));
 
-  // Build polyline path:
-  // Row boundary points are at x = default date position.
-  // Row center points are at x = each row's specified date position.
-  // Lines go diagonally between boundary points and center points:
-  //   (defaultX, boundary_top) → diagonal → (xi, center_i) → diagonal → (defaultX, boundary_bottom)
   if (coords.length > 0) {
     const defX = getXForDateCenter(state.thunderLine.defaultDate || fmtDate(new Date()), columns, colWidth);
     const pathParts = [];
-    // Start: top of first row at default x
     pathParts.push(`${defX},${0}`);
     for (let i = 0; i < coords.length; i++) {
-      // Diagonal to row center point
       pathParts.push(`${coords[i].x},${coords[i].y}`);
-      // Diagonal to boundary below this row at default x
-      const boundaryY = (coords[i].rowIndex + 1) * rh;
+      const boundaryY = (coords[i].displayIndex + 1) * rh;
       pathParts.push(`${defX},${boundaryY}`);
     }
 
@@ -1514,7 +1557,7 @@ function renderToCanvas() {
   const fs = state.fontSize;
 
   const totalW = columns.length * colWidth + sw;
-  const totalH = state.rows.length * rh + hh;
+  const totalH = visibleRows.length * rh + hh;
 
   const dpr = window.devicePixelRatio || 1;
   const canvas = document.createElement('canvas');
@@ -1565,8 +1608,9 @@ function renderToCanvas() {
   ctx.beginPath(); ctx.moveTo(sw, 0); ctx.lineTo(sw, totalH); ctx.stroke();
 
   // Rows
-  state.rows.forEach((row, ri) => {
-    const y = hh + ri * rh;
+  visibleRows.forEach((entry, vi) => {
+    const row = entry.row;
+    const y = hh + vi * rh;
 
     // Row background
     ctx.fillStyle = ri % 2 === 0 ? '#fafbfc' : '#fff';
@@ -1638,16 +1682,15 @@ function renderToCanvas() {
   });
 
   // Thunder line
-  if (state.thunderLine.visible && state.rows.length > 0) {
+  if (state.thunderLine.visible && visibleRows.length > 0) {
     const pts = getThunderPointsForRender();
     const coords = pts.map(p => ({
       x: sw + getXForDateCenter(p.date, columns, colWidth),
-      y: hh + p.rowIndex * rh + rh / 2,
+      y: hh + p.displayIndex * rh + rh / 2,
       explicit: p.explicit,
-      rowIndex: p.rowIndex
+      displayIndex: p.displayIndex
     }));
 
-    // Draw zigzag: boundary(defaultX) → diagonal → center(xi) → diagonal → boundary(defaultX)
     if (coords.length > 0) {
       const defX = sw + getXForDateCenter(state.thunderLine.defaultDate || fmtDate(new Date()), columns, colWidth);
       ctx.strokeStyle = '#d32f2f';
@@ -1656,7 +1699,7 @@ function renderToCanvas() {
       ctx.moveTo(defX, hh);
       for (let i = 0; i < coords.length; i++) {
         ctx.lineTo(coords[i].x, coords[i].y);
-        const boundaryY = hh + (coords[i].rowIndex + 1) * rh;
+        const boundaryY = hh + (coords[i].displayIndex + 1) * rh;
         ctx.lineTo(defX, boundaryY);
       }
       ctx.stroke();
