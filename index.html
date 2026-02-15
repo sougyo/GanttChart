@@ -87,7 +87,10 @@ body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; font-size
   border-bottom: 2px solid var(--border-color);
   display: flex; align-items: center; justify-content: center;
   font-weight: bold; font-size: 0.85em; color: #666;
+  outline: none; cursor: text; min-width: 0; overflow: hidden;
+  white-space: nowrap; text-overflow: ellipsis; padding: 0 6px;
 }
+#gantt-corner:focus { background: #e8f0fe; }
 #gantt-header-scroll {
   grid-row: 1; grid-column: 2;
   overflow: hidden;
@@ -351,7 +354,7 @@ body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; font-size
 
 <div id="gantt-wrapper">
   <div id="sidebar-resize-handle"></div>
-  <div id="gantt-corner">Task</div>
+  <div id="gantt-corner" contenteditable="true">Task</div>
   <div id="gantt-header-scroll"><div id="gantt-header"></div></div>
   <div id="gantt-sidebar-scroll"><div id="gantt-sidebar"></div></div>
   <div id="gantt-body-scroll">
@@ -524,7 +527,8 @@ function updateUIText() {
   document.getElementById('btn-copy-image').textContent = t('copyImage');
   document.getElementById('btn-export').textContent = t('export');
   document.getElementById('btn-import').textContent = t('import');
-  document.getElementById('gantt-corner').textContent = t('taskName');
+  const corner = document.getElementById('gantt-corner');
+  corner.textContent = state.cornerLabel || t('taskName');
 }
 
 function changeLang(lang) {
@@ -545,6 +549,7 @@ let state = {
   startDate: fmtDate(_initStart),
   endDate: fmtDate(_initEnd),
   fontSize: 14,
+  cornerLabel: '',
   rows: [
     { name: 'Task 1', items: [] },
     { name: 'Task 2', items: [] },
@@ -1822,6 +1827,7 @@ function loadJSONFile(file) {
         if (!state.thunderLine) state.thunderLine = { visible: true, points: [], defaultDate: fmtDate(new Date()) };
         if (!state.thunderLine.defaultDate) state.thunderLine.defaultDate = fmtDate(new Date());
         if (!state.fontSize) state.fontSize = 14;
+        if (state.cornerLabel === undefined) state.cornerLabel = '';
         if (state.lang) { currentLang = state.lang; } else { state.lang = currentLang; }
         document.getElementById('sel-lang').value = currentLang;
         updateUIText();
@@ -1961,7 +1967,7 @@ function renderToCanvas() {
   ctx.fillStyle = '#666';
   ctx.font = `bold ${fs * 0.85}px sans-serif`;
   ctx.textBaseline = 'middle';
-  ctx.fillText(t('taskName'), 8, hh / 2);
+  ctx.fillText(state.cornerLabel || t('taskName'), 8, hh / 2);
 
   // Header labels
   ctx.font = `600 ${fs * 0.85}px sans-serif`;
@@ -2214,6 +2220,17 @@ document.addEventListener('DOMContentLoaded', () => {
   updateUIText();
   initResizeHandle();
   initSidebarResizeHandle();
+
+  // Corner label editing
+  const corner = document.getElementById('gantt-corner');
+  corner.addEventListener('blur', () => {
+    const text = corner.textContent.trim();
+    state.cornerLabel = text === t('taskName') ? '' : text;
+  });
+  corner.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); corner.blur(); }
+  });
+
   render();
 
   // File drag & drop import
