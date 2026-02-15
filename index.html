@@ -1867,9 +1867,13 @@ function renderToCanvas() {
           } else {
             ctx.fillStyle = '#333';
             if (tlp === 'above') {
-              ctx.fillText(item.label, x1, barY - 3);
+              ctx.textBaseline = 'alphabetic';
+              ctx.fillText(item.label, x1, barY - 4);
+              ctx.textBaseline = 'middle';
             } else if (tlp === 'below') {
-              ctx.fillText(item.label, x1, barY + bh + fs * 0.8 + 1);
+              ctx.textBaseline = 'top';
+              ctx.fillText(item.label, x1, barY + bh + 4);
+              ctx.textBaseline = 'middle';
             } else if (tlp === 'left') {
               ctx.fillText(item.label, x1 - tw - 4, barY + bh / 2);
             } else if (tlp === 'right') {
