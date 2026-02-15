@@ -823,11 +823,11 @@ function renderSidebar() {
       const btnDel = document.createElement('button');
       btnDel.textContent = '×';
       btnDel.title = t('deleteRow');
-      btnDel.onclick = () => { if(state.rows.length>1){state.rows.splice(ri,1);selectedItems=[];render();} };
+      btnDel.onclick = () => { if(state.rows.length>1){ deleteRowAt(ri); } };
       const btnUp = document.createElement('button');
       btnUp.textContent = '↑';
       btnUp.title = t('addRowAbove');
-      btnUp.onclick = () => { state.rows.splice(ri,0,{name:t('newTask'),items:[]});render(); };
+      btnUp.onclick = () => { insertRowAt(ri); };
       btns.appendChild(btnUp);
       btns.appendChild(btnDel);
       div.appendChild(btns);
@@ -1789,6 +1789,31 @@ function removeColumnEnd() {
 // ===== Row =====
 function addRow() {
   state.rows.push({ name: t('newTask'), items: [] });
+  render();
+}
+
+function insertRowAt(ri) {
+  state.rows.splice(ri, 0, { name: t('newTask'), items: [] });
+  // Shift thunder line points at or after the inserted position
+  state.thunderLine.points.forEach(p => {
+    if (p.rowIndex >= ri) p.rowIndex++;
+  });
+  // Shift selected items
+  selectedItems = selectedItems.map(s => ({
+    rowIndex: s.rowIndex >= ri ? s.rowIndex + 1 : s.rowIndex,
+    itemIndex: s.itemIndex
+  }));
+  render();
+}
+
+function deleteRowAt(ri) {
+  state.rows.splice(ri, 1);
+  // Remove thunder line points for the deleted row and shift others
+  state.thunderLine.points = state.thunderLine.points.filter(p => p.rowIndex !== ri);
+  state.thunderLine.points.forEach(p => {
+    if (p.rowIndex > ri) p.rowIndex--;
+  });
+  selectedItems = [];
   render();
 }
 
