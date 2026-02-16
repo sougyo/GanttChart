@@ -1100,13 +1100,6 @@ function renderTask(layer, item, ri, ii, rh, bh, ry) {
       if (el.querySelector('.inline-edit')) return;
       onItemMouseDown(e, ri, ii);
     });
-    el.addEventListener('dblclick', e => {
-      e.stopPropagation();
-      startInlineEdit(el, taskLabel, text => {
-        state.rows[ri].items[ii].label = text;
-        render();
-      });
-    });
     el.addEventListener('contextmenu', e => {
       e.preventDefault(); e.stopPropagation();
       showContextMenu(e.clientX, e.clientY, [
@@ -1155,15 +1148,6 @@ function renderMilestone(layer, item, ri, ii, rh, ry) {
     el.addEventListener('mousedown', e => {
       if (el.querySelector('.inline-edit')) return;
       onItemMouseDown(e, ri, ii);
-    });
-    el.addEventListener('dblclick', e => {
-      e.stopPropagation();
-      if (lblEl) {
-        startInlineEdit(el, lblEl, text => {
-          state.rows[ri].items[ii].label = text;
-          render();
-        });
-      }
     });
     el.addEventListener('contextmenu', e => {
       e.preventDefault(); e.stopPropagation();
@@ -1381,9 +1365,21 @@ function formatDateLabel(d) {
 }
 
 // ===== Drag & Resize =====
+let _lastItemClick = { ri: -1, ii: -1, time: 0 };
+
 function onItemMouseDown(e, ri, ii) {
   if (e.button !== 0) return;
   e.stopPropagation();
+
+  // Detect double-click
+  const now = Date.now();
+  if (_lastItemClick.ri === ri && _lastItemClick.ii === ii && now - _lastItemClick.time < 400) {
+    _lastItemClick = { ri: -1, ii: -1, time: 0 };
+    editItemDialog(ri, ii);
+    return;
+  }
+  _lastItemClick = { ri, ii, time: now };
+
   const wasSelected = isSelected(ri, ii);
   const multi = e.ctrlKey || e.metaKey;
 
