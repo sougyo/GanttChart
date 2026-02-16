@@ -427,6 +427,8 @@ const I18N = {
     posAfter: 'After',
     date: 'Date',
     memo: 'Memo',
+    milestoneShape: 'Shape',
+    milestoneColor: 'Color',
     addTask: 'Add Task',
     addMilestone: 'Add Milestone',
     editTask: 'Edit Task',
@@ -490,6 +492,8 @@ const I18N = {
     posAfter: '\u5F8C',
     date: '\u65E5\u4ED8',
     memo: '\u30E1\u30E2',
+    milestoneShape: '\u5F62\u72B6',
+    milestoneColor: '\u8272',
     addTask: '\u4F5C\u696D\u3092\u8FFD\u52A0',
     addMilestone: '\u30A4\u30D9\u30F3\u30C8\u3092\u8FFD\u52A0',
     editTask: '\u4F5C\u696D\u3092\u7DE8\u96C6',
@@ -1132,7 +1136,8 @@ function renderMilestone(layer, item, ri, ii, rh, ry) {
   }
   const mark = document.createElement('span');
   mark.className = 'milestone-mark';
-  mark.textContent = '▽';
+  mark.textContent = item.milestoneShape || '▽';
+  if (item.milestoneColor) mark.style.color = item.milestoneColor;
   el.appendChild(mark);
   if (pos === 'after') {
     lblEl = document.createElement('span');
@@ -1720,12 +1725,16 @@ function addMilestoneDialog(ri, dateStr) {
     { key: 'date', label: t('date'), type: 'date', value: dateStr },
     { key: 'labelPosition', label: t('labelPos'), type: 'select', value: 'after',
       options: [{ value: 'before', label: t('posBefore') }, { value: 'after', label: t('posAfter') }] },
+    { key: 'milestoneShape', label: t('milestoneShape'), type: 'select', value: '▽',
+      options: [{ value: '▽', label: '▽' }, { value: '▼', label: '▼' }, { value: '△', label: '△' }, { value: '▲', label: '▲' }] },
+    { key: 'milestoneColor', label: t('milestoneColor'), type: 'color', value: '#d32f2f' },
     { key: 'memo', label: t('memo'), type: 'textarea', value: '' }
   ], vals => {
     if (!vals.date) return;
     state.rows[ri].items.push({
       type: 'milestone', date: vals.date,
       label: vals.label, labelPosition: vals.labelPosition,
+      milestoneShape: vals.milestoneShape, milestoneColor: vals.milestoneColor,
       memo: vals.memo
     });
     render();
@@ -1758,12 +1767,17 @@ function editItemDialog(ri, ii) {
       { key: 'date', label: t('date'), type: 'date', value: item.date },
       { key: 'labelPosition', label: t('labelPos'), type: 'select', value: item.labelPosition || 'after',
         options: [{ value: 'before', label: t('posBefore') }, { value: 'after', label: t('posAfter') }] },
+      { key: 'milestoneShape', label: t('milestoneShape'), type: 'select', value: item.milestoneShape || '▽',
+        options: [{ value: '▽', label: '▽' }, { value: '▼', label: '▼' }, { value: '△', label: '△' }, { value: '▲', label: '▲' }] },
+      { key: 'milestoneColor', label: t('milestoneColor'), type: 'color', value: item.milestoneColor || '#d32f2f' },
       { key: 'memo', label: t('memo'), type: 'textarea', value: item.memo || '' }
     ], vals => {
       if (!vals.date) return;
       item.label = vals.label;
       item.date = vals.date;
       item.labelPosition = vals.labelPosition;
+      item.milestoneShape = vals.milestoneShape;
+      item.milestoneColor = vals.milestoneColor;
       item.memo = vals.memo;
       render();
     });
@@ -2210,11 +2224,12 @@ function renderToCanvas() {
       } else if (item.type === 'milestone') {
         const x = sw + getXForDateCenter(item.date, columns, colWidth);
         const my = y + rh / 2;
-        ctx.fillStyle = '#d32f2f';
+        ctx.fillStyle = item.milestoneColor || '#d32f2f';
         ctx.font = `${fs * 1.3}px sans-serif`;
         ctx.textBaseline = 'middle';
-        const markW = ctx.measureText('▽').width;
-        ctx.fillText('▽', x - markW / 2, my);
+        const msChar = item.milestoneShape || '▽';
+        const markW = ctx.measureText(msChar).width;
+        ctx.fillText(msChar, x - markW / 2, my);
 
         if (item.label) {
           ctx.fillStyle = '#333';
