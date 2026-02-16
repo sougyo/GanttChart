@@ -426,6 +426,7 @@ const I18N = {
     posBefore: 'Before',
     posAfter: 'After',
     date: 'Date',
+    memo: 'Memo',
     addTask: 'Add Task',
     addMilestone: 'Add Milestone',
     editTask: 'Edit Task',
@@ -488,6 +489,7 @@ const I18N = {
     posBefore: '\u524D',
     posAfter: '\u5F8C',
     date: '\u65E5\u4ED8',
+    memo: '\u30E1\u30E2',
     addTask: '\u4F5C\u696D\u3092\u8FFD\u52A0',
     addMilestone: '\u30A4\u30D9\u30F3\u30C8\u3092\u8FFD\u52A0',
     editTask: '\u4F5C\u696D\u3092\u7DE8\u96C6',
@@ -1081,7 +1083,7 @@ function renderTask(layer, item, ri, ii, rh, bh, ry) {
     taskLabel.textContent = item.label || '';
     el.appendChild(taskLabel);
   }
-  el.title = `${item.label || ''}\n${item.startDate} 〜 ${item.endDate}`;
+  el.title = `${item.label || ''}\n${item.startDate} 〜 ${item.endDate}${item.memo ? '\n' + item.memo : ''}`;
 
   if (appMode === 'edit') {
     const lHandle = document.createElement('div');
@@ -1125,7 +1127,7 @@ function renderMilestone(layer, item, ri, ii, rh, ry) {
   el.className = 'gantt-item gantt-milestone';
   if (isSelected(ri, ii)) el.classList.add('selected');
   el.style.top = (top - 12) + 'px';
-  el.title = `${item.label || ''}\n${item.date}`;
+  el.title = `${item.label || ''}\n${item.date}${item.memo ? '\n' + item.memo : ''}`;
 
   const pos = item.labelPosition || 'after';
   let lblEl;
@@ -1641,6 +1643,14 @@ function showModal(title, fields, onOk) {
       });
       inputs[f.key] = sel;
       div.appendChild(sel);
+    } else if (f.type === 'textarea') {
+      const ta = document.createElement('textarea');
+      ta.rows = 3;
+      ta.value = f.value || '';
+      ta.style.width = '100%';
+      ta.style.resize = 'vertical';
+      inputs[f.key] = ta;
+      div.appendChild(ta);
     } else {
       const inp = document.createElement('input');
       inp.type = f.type || 'text';
@@ -1695,12 +1705,14 @@ function addTaskDialog(ri, dateStr) {
     { key: 'startDate', label: t('startDate'), type: 'date', value: dateStr },
     { key: 'endDate', label: t('endDate'), type: 'date', value: endDate },
     { key: 'color', label: t('color'), type: 'color', value: COLORS[0] },
-    { key: 'taskLabelPosition', label: t('labelPos'), type: 'select', value: 'inside', options: getTaskLabelPosOptions() }
+    { key: 'taskLabelPosition', label: t('labelPos'), type: 'select', value: 'inside', options: getTaskLabelPosOptions() },
+    { key: 'memo', label: t('memo'), type: 'textarea', value: '' }
   ], vals => {
     if (!vals.startDate || !vals.endDate) return;
     state.rows[ri].items.push({
       type: 'task', startDate: vals.startDate, endDate: vals.endDate,
-      label: vals.label, color: vals.color, taskLabelPosition: vals.taskLabelPosition
+      label: vals.label, color: vals.color, taskLabelPosition: vals.taskLabelPosition,
+      memo: vals.memo
     });
     render();
   });
@@ -1711,12 +1723,14 @@ function addMilestoneDialog(ri, dateStr) {
     { key: 'label', label: t('label'), type: 'text', value: '' },
     { key: 'date', label: t('date'), type: 'date', value: dateStr },
     { key: 'labelPosition', label: t('labelPos'), type: 'select', value: 'after',
-      options: [{ value: 'before', label: t('posBefore') }, { value: 'after', label: t('posAfter') }] }
+      options: [{ value: 'before', label: t('posBefore') }, { value: 'after', label: t('posAfter') }] },
+    { key: 'memo', label: t('memo'), type: 'textarea', value: '' }
   ], vals => {
     if (!vals.date) return;
     state.rows[ri].items.push({
       type: 'milestone', date: vals.date,
-      label: vals.label, labelPosition: vals.labelPosition
+      label: vals.label, labelPosition: vals.labelPosition,
+      memo: vals.memo
     });
     render();
   });
@@ -1730,7 +1744,8 @@ function editItemDialog(ri, ii) {
       { key: 'startDate', label: t('startDate'), type: 'date', value: item.startDate },
       { key: 'endDate', label: t('endDate'), type: 'date', value: item.endDate },
       { key: 'color', label: t('color'), type: 'color', value: item.color || COLORS[0] },
-      { key: 'taskLabelPosition', label: t('labelPos'), type: 'select', value: item.taskLabelPosition || 'inside', options: getTaskLabelPosOptions() }
+      { key: 'taskLabelPosition', label: t('labelPos'), type: 'select', value: item.taskLabelPosition || 'inside', options: getTaskLabelPosOptions() },
+      { key: 'memo', label: t('memo'), type: 'textarea', value: item.memo || '' }
     ], vals => {
       if (!vals.startDate || !vals.endDate) return;
       item.label = vals.label;
@@ -1738,6 +1753,7 @@ function editItemDialog(ri, ii) {
       item.endDate = vals.endDate;
       item.color = vals.color;
       item.taskLabelPosition = vals.taskLabelPosition;
+      item.memo = vals.memo;
       render();
     });
   } else {
@@ -1745,12 +1761,14 @@ function editItemDialog(ri, ii) {
       { key: 'label', label: t('label'), type: 'text', value: item.label },
       { key: 'date', label: t('date'), type: 'date', value: item.date },
       { key: 'labelPosition', label: t('labelPos'), type: 'select', value: item.labelPosition || 'after',
-        options: [{ value: 'before', label: t('posBefore') }, { value: 'after', label: t('posAfter') }] }
+        options: [{ value: 'before', label: t('posBefore') }, { value: 'after', label: t('posAfter') }] },
+      { key: 'memo', label: t('memo'), type: 'textarea', value: item.memo || '' }
     ], vals => {
       if (!vals.date) return;
       item.label = vals.label;
       item.date = vals.date;
       item.labelPosition = vals.labelPosition;
+      item.memo = vals.memo;
       render();
     });
   }
