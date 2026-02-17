@@ -236,6 +236,13 @@ body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; font-size
 .milestone-mark { font-size: 1.3em; color: #d32f2f; line-height: 1; }
 .milestone-label { color: #333; }
 
+.lane-separator {
+  position: absolute; left: 0; height: 0;
+  border-top: 1px dashed #ccc;
+  pointer-events: none;
+  z-index: 1;
+}
+
 #arrow-svg {
   position: absolute; top: 0; left: 0; pointer-events: none; z-index: 4;
 }
@@ -470,6 +477,9 @@ const I18N = {
     invalidFile: 'Invalid file format.',
     jsonError: 'Failed to load JSON: ',
     deleteArrow: 'Delete Arrow',
+    addLane: 'Add Lane',
+    removeLane: 'Remove Lane',
+    lane: 'Lane',
   },
   ja: {
     title: '\u30AC\u30F3\u30C8\u30C1\u30E3\u30FC\u30C8',
@@ -536,6 +546,9 @@ const I18N = {
     invalidFile: '\u7121\u52B9\u306A\u30D5\u30A1\u30A4\u30EB\u5F62\u5F0F\u3067\u3059\u3002',
     jsonError: 'JSON\u306E\u8AAD\u307F\u8FBC\u307F\u306B\u5931\u6557\u3057\u307E\u3057\u305F: ',
     deleteArrow: '\u77E2\u5370\u3092\u524A\u9664',
+    addLane: '\u30EC\u30FC\u30F3\u3092\u8FFD\u52A0',
+    removeLane: '\u30EC\u30FC\u30F3\u3092\u524A\u9664',
+    lane: '\u30EC\u30FC\u30F3',
   }
 };
 
@@ -596,9 +609,9 @@ let state = {
   bodyHeight: null,
   viewRange: null,
   rows: [
-    { name: 'Task 1', items: [] },
-    { name: 'Task 2', items: [] },
-    { name: 'Task 3', items: [] }
+    { name: 'Task 1', items: [], lanes: 1 },
+    { name: 'Task 2', items: [], lanes: 1 },
+    { name: 'Task 3', items: [], lanes: 1 }
   ],
   thunderLine: { visible: true, points: [], defaultDate: fmtDate(new Date()) },
   arrows: []
@@ -765,12 +778,49 @@ function computeRowLayout() {
         if (pos === 'below') hasBelow = true;
       }
     });
-    const h = BASE_ROW_HEIGHT + (hasAbove ? labelExtra : 0) + (hasBelow ? labelExtra : 0);
+    const numLanes = entry.row.lanes || 1;
+    const h = BASE_ROW_HEIGHT * numLanes + (hasAbove ? labelExtra : 0) + (hasBelow ? labelExtra : 0);
     rowHeights.push(h);
     rowYOffsets.push(y);
     y += h;
   });
   totalBodyHeight = y;
+}
+
+function getLaneCenterY(row, laneIndex, rh) {
+  const numLanes = row.lanes || 1;
+  const labelExtra = Math.ceil(state.fontSize * 0.8) + 4;
+  let hasAbove = false;
+  row.items.forEach(item => {
+    if (item.type === 'task' && (item.taskLabelPosition || 'inside') === 'above') hasAbove = true;
+  });
+  const extraTop = hasAbove ? labelExtra : 0;
+  let hasBelow = false;
+  row.items.forEach(item => {
+    if (item.type === 'task' && (item.taskLabelPosition || 'inside') === 'below') hasBelow = true;
+  });
+  const extraBottom = hasBelow ? labelExtra : 0;
+  const laneH = (rh - extraTop - extraBottom) / numLanes;
+  return extraTop + laneH * laneIndex + laneH / 2;
+}
+
+function getLaneForY(row, yWithinRow, rh) {
+  const numLanes = row.lanes || 1;
+  if (numLanes <= 1) return 0;
+  const labelExtra = Math.ceil(state.fontSize * 0.8) + 4;
+  let hasAbove = false;
+  row.items.forEach(item => {
+    if (item.type === 'task' && (item.taskLabelPosition || 'inside') === 'above') hasAbove = true;
+  });
+  const extraTop = hasAbove ? labelExtra : 0;
+  let hasBelow = false;
+  row.items.forEach(item => {
+    if (item.type === 'task' && (item.taskLabelPosition || 'inside') === 'below') hasBelow = true;
+  });
+  const extraBottom = hasBelow ? labelExtra : 0;
+  const laneH = (rh - extraTop - extraBottom) / numLanes;
+  const laneIndex = Math.floor((yWithinRow - extraTop) / laneH);
+  return Math.max(0, Math.min(numLanes - 1, laneIndex));
 }
 
 function getVisibleRowIndexForY(y) {
@@ -1060,6 +1110,34 @@ function renderBody() {
     });
     grid.appendChild(rowDiv);
   });
+
+  // Lane separator lines
+  visibleRows.forEach((entry, vi) => {
+    const numLanes = entry.row.lanes || 1;
+    if (numLanes <= 1) return;
+    const rh = rowHeights[vi];
+    const ry = rowYOffsets[vi];
+    const labelExtra = Math.ceil(state.fontSize * 0.8) + 4;
+    let hasAbove = false, hasBelow = false;
+    entry.row.items.forEach(item => {
+      if (item.type === 'task') {
+        const pos = item.taskLabelPosition || 'inside';
+        if (pos === 'above') hasAbove = true;
+        if (pos === 'below') hasBelow = true;
+      }
+    });
+    const extraTop = hasAbove ? labelExtra : 0;
+    const extraBottom = hasBelow ? labelExtra : 0;
+    const laneH = (rh - extraTop - extraBottom) / numLanes;
+    for (let li = 1; li < numLanes; li++) {
+      const sepY = ry + extraTop + laneH * li;
+      const sep = document.createElement('div');
+      sep.className = 'lane-separator';
+      sep.style.top = sepY + 'px';
+      sep.style.width = totalW + 'px';
+      grid.appendChild(sep);
+    }
+  });
 }
 
 function renderItems() {
@@ -1086,7 +1164,10 @@ function renderTask(layer, item, ri, ii, rh, bh, ry) {
   const x2 = getXForDateEnd(item.endDate, columns, colWidth);
   if (x2 < 0 || x1 > columns.length * colWidth) return;
   const w = Math.max(x2 - x1, 6);
-  const top = ry + (rh - bh) / 2;
+  const row = state.rows[ri];
+  const laneIdx = item.lane || 0;
+  const laneCenter = getLaneCenterY(row, laneIdx, rh);
+  const top = ry + laneCenter - bh / 2;
 
   const el = document.createElement('div');
   el.className = 'gantt-item gantt-task';
@@ -1154,7 +1235,10 @@ function renderTask(layer, item, ri, ii, rh, bh, ry) {
 function renderMilestone(layer, item, ri, ii, rh, ry) {
   const x = getXForDateCenter(item.date, columns, colWidth);
   if (x < 0 || x > columns.length * colWidth) return;
-  const top = ry + rh / 2;
+  const row = state.rows[ri];
+  const laneIdx = item.lane || 0;
+  const laneCenter = getLaneCenterY(row, laneIdx, rh);
+  const top = ry + laneCenter;
 
   const el = document.createElement('div');
   el.className = 'gantt-item gantt-milestone';
@@ -1221,16 +1305,18 @@ function getArrowAnchorPos(ref) {
   const item = row.items[ref.itemIndex];
   const rh = rowHeights[vi];
   const ry = rowYOffsets[vi];
+  const laneIdx = item.lane || 0;
+  const laneCenter = getLaneCenterY(row, laneIdx, rh);
 
   if (item.type === 'task') {
-    const y = ry + (rh - bh) / 2 + bh / 2;
+    const y = ry + laneCenter;
     if (ref.edge === 'left') {
       return { x: getXForDate(item.startDate, columns, colWidth), y };
     } else {
       return { x: getXForDateEnd(item.endDate, columns, colWidth), y };
     }
   } else if (item.type === 'milestone') {
-    return { x: getXForDateCenter(item.date, columns, colWidth), y: ry + rh / 2 };
+    return { x: getXForDateCenter(item.date, columns, colWidth), y: ry + laneCenter };
   }
   return null;
 }
@@ -1354,8 +1440,10 @@ function findAnchorAtPos(mx, my, excludeRi, excludeIi) {
     const ry = rowYOffsets[vi];
     entry.row.items.forEach((item, ii) => {
       if (ri === excludeRi && ii === excludeIi) return;
+      const laneIdx = item.lane || 0;
+      const laneCenter = getLaneCenterY(entry.row, laneIdx, rh);
       if (item.type === 'task') {
-        const cy = ry + (rh - bh) / 2 + bh / 2;
+        const cy = ry + laneCenter;
         const leftX = getXForDate(item.startDate, columns, colWidth);
         const rightX = getXForDateEnd(item.endDate, columns, colWidth);
         // Check left anchor
@@ -1366,7 +1454,7 @@ function findAnchorAtPos(mx, my, excludeRi, excludeIi) {
         if (d < bestDist) { bestDist = d; best = { rowIndex: ri, itemIndex: ii, edge: 'right' }; }
       } else if (item.type === 'milestone') {
         const cx = getXForDateCenter(item.date, columns, colWidth);
-        const cy = ry + rh / 2;
+        const cy = ry + laneCenter;
         const d = Math.hypot(mx - cx, my - cy);
         if (d < bestDist) { bestDist = d; best = { rowIndex: ri, itemIndex: ii, edge: 'center' }; }
       }
@@ -1793,12 +1881,22 @@ document.addEventListener('DOMContentLoaded', () => {
     const clickDate = getDateForX(x, columns, colWidth);
     const clickDateStr = fmtDate(clickDate);
 
+    const clickedRow = state.rows[ri];
+    const clickedRh = rowHeights[vi];
+    const yInRow = y - rowYOffsets[vi];
+    const clickedLane = getLaneForY(clickedRow, yInRow, clickedRh);
+
     const menuItems = [
-      { label: `${t('addTask')} (${clickDateStr})`, action: () => addTaskDialog(ri, clickDateStr) },
-      { label: `${t('addMilestone')} (${clickDateStr})`, action: () => addMilestoneDialog(ri, clickDateStr) },
+      { label: `${t('addTask')} (${clickDateStr})`, action: () => addTaskDialog(ri, clickDateStr, clickedLane) },
+      { label: `${t('addMilestone')} (${clickDateStr})`, action: () => addMilestoneDialog(ri, clickDateStr, clickedLane) },
       { sep: true },
-      { label: t('addProgress'), action: () => { addThunderPoint(ri, clickDateStr); } },
+      { label: t('addLane'), action: () => { addLane(ri); } },
     ];
+    if ((clickedRow.lanes || 1) >= 2) {
+      menuItems.push({ label: t('removeLane'), action: () => { removeLane(ri); } });
+    }
+    menuItems.push({ sep: true });
+    menuItems.push({ label: t('addProgress'), action: () => { addThunderPoint(ri, clickDateStr); } });
 
     if (selectedItems.length > 0) {
       menuItems.push({ sep: true });
@@ -1954,28 +2052,43 @@ function getTaskLabelPosOptions() {
   ];
 }
 
-function addTaskDialog(ri, dateStr) {
+function getLaneOptions(numLanes) {
+  const opts = [];
+  for (let i = 0; i < numLanes; i++) {
+    opts.push({ value: String(i), label: `${t('lane')} ${i + 1}` });
+  }
+  return opts;
+}
+
+function addTaskDialog(ri, dateStr, clickedLane) {
   const endDate = fmtDate(addDays(parseDate(dateStr), 30));
-  showModal(t('addTask'), [
+  const numLanes = state.rows[ri].lanes || 1;
+  const fields = [
     { key: 'label', label: t('label'), type: 'text', value: '' },
     { key: 'startDate', label: t('startDate'), type: 'date', value: dateStr },
     { key: 'endDate', label: t('endDate'), type: 'date', value: endDate },
     { key: 'color', label: t('color'), type: 'color', value: COLORS[0] },
     { key: 'taskLabelPosition', label: t('labelPos'), type: 'select', value: 'inside', options: getTaskLabelPosOptions() },
     { key: 'memo', label: t('memo'), type: 'textarea', value: '' }
-  ], vals => {
+  ];
+  if (numLanes > 1) {
+    fields.splice(1, 0, { key: 'lane', label: t('lane'), type: 'select', value: String(clickedLane || 0), options: getLaneOptions(numLanes) });
+  }
+  showModal(t('addTask'), fields, vals => {
     if (!vals.startDate || !vals.endDate) return;
     state.rows[ri].items.push({
       type: 'task', startDate: vals.startDate, endDate: vals.endDate,
       label: vals.label, color: vals.color, taskLabelPosition: vals.taskLabelPosition,
-      memo: vals.memo
+      memo: vals.memo,
+      lane: numLanes > 1 ? parseInt(vals.lane) : 0
     });
     render();
   });
 }
 
-function addMilestoneDialog(ri, dateStr) {
-  showModal(t('addMilestone'), [
+function addMilestoneDialog(ri, dateStr, clickedLane) {
+  const numLanes = state.rows[ri].lanes || 1;
+  const fields = [
     { key: 'label', label: t('label'), type: 'text', value: '' },
     { key: 'date', label: t('date'), type: 'date', value: dateStr },
     { key: 'labelPosition', label: t('labelPos'), type: 'select', value: 'after',
@@ -1984,13 +2097,18 @@ function addMilestoneDialog(ri, dateStr) {
       options: [{ value: '▽', label: '▽' }, { value: '▼', label: '▼' }, { value: '△', label: '△' }, { value: '▲', label: '▲' }] },
     { key: 'milestoneColor', label: t('milestoneColor'), type: 'color', value: '#d32f2f' },
     { key: 'memo', label: t('memo'), type: 'textarea', value: '' }
-  ], vals => {
+  ];
+  if (numLanes > 1) {
+    fields.splice(1, 0, { key: 'lane', label: t('lane'), type: 'select', value: String(clickedLane || 0), options: getLaneOptions(numLanes) });
+  }
+  showModal(t('addMilestone'), fields, vals => {
     if (!vals.date) return;
     state.rows[ri].items.push({
       type: 'milestone', date: vals.date,
       label: vals.label, labelPosition: vals.labelPosition,
       milestoneShape: vals.milestoneShape, milestoneColor: vals.milestoneColor,
-      memo: vals.memo
+      memo: vals.memo,
+      lane: numLanes > 1 ? parseInt(vals.lane) : 0
     });
     render();
   });
@@ -1998,15 +2116,20 @@ function addMilestoneDialog(ri, dateStr) {
 
 function editItemDialog(ri, ii) {
   const item = state.rows[ri].items[ii];
+  const numLanes = state.rows[ri].lanes || 1;
   if (item.type === 'task') {
-    showModal(t('editTask'), [
+    const fields = [
       { key: 'label', label: t('label'), type: 'text', value: item.label },
       { key: 'startDate', label: t('startDate'), type: 'date', value: item.startDate },
       { key: 'endDate', label: t('endDate'), type: 'date', value: item.endDate },
       { key: 'color', label: t('color'), type: 'color', value: item.color || COLORS[0] },
       { key: 'taskLabelPosition', label: t('labelPos'), type: 'select', value: item.taskLabelPosition || 'inside', options: getTaskLabelPosOptions() },
       { key: 'memo', label: t('memo'), type: 'textarea', value: item.memo || '' }
-    ], vals => {
+    ];
+    if (numLanes > 1) {
+      fields.splice(1, 0, { key: 'lane', label: t('lane'), type: 'select', value: String(item.lane || 0), options: getLaneOptions(numLanes) });
+    }
+    showModal(t('editTask'), fields, vals => {
       if (!vals.startDate || !vals.endDate) return;
       item.label = vals.label;
       item.startDate = vals.startDate;
@@ -2014,10 +2137,11 @@ function editItemDialog(ri, ii) {
       item.color = vals.color;
       item.taskLabelPosition = vals.taskLabelPosition;
       item.memo = vals.memo;
+      if (numLanes > 1) item.lane = parseInt(vals.lane);
       render();
     });
   } else {
-    showModal(t('editMilestone'), [
+    const fields = [
       { key: 'label', label: t('label'), type: 'text', value: item.label },
       { key: 'date', label: t('date'), type: 'date', value: item.date },
       { key: 'labelPosition', label: t('labelPos'), type: 'select', value: item.labelPosition || 'after',
@@ -2026,7 +2150,11 @@ function editItemDialog(ri, ii) {
         options: [{ value: '▽', label: '▽' }, { value: '▼', label: '▼' }, { value: '△', label: '△' }, { value: '▲', label: '▲' }] },
       { key: 'milestoneColor', label: t('milestoneColor'), type: 'color', value: item.milestoneColor || '#d32f2f' },
       { key: 'memo', label: t('memo'), type: 'textarea', value: item.memo || '' }
-    ], vals => {
+    ];
+    if (numLanes > 1) {
+      fields.splice(1, 0, { key: 'lane', label: t('lane'), type: 'select', value: String(item.lane || 0), options: getLaneOptions(numLanes) });
+    }
+    showModal(t('editMilestone'), fields, vals => {
       if (!vals.date) return;
       item.label = vals.label;
       item.date = vals.date;
@@ -2034,6 +2162,7 @@ function editItemDialog(ri, ii) {
       item.milestoneShape = vals.milestoneShape;
       item.milestoneColor = vals.milestoneColor;
       item.memo = vals.memo;
+      if (numLanes > 1) item.lane = parseInt(vals.lane);
       render();
     });
   }
@@ -2144,12 +2273,12 @@ function removeColumnEnd() {
 
 // ===== Row =====
 function addRow() {
-  state.rows.push({ name: t('newTask'), items: [] });
+  state.rows.push({ name: t('newTask'), items: [], lanes: 1 });
   render();
 }
 
 function insertRowAt(ri) {
-  state.rows.splice(ri, 0, { name: t('newTask'), items: [] });
+  state.rows.splice(ri, 0, { name: t('newTask'), items: [], lanes: 1 });
   // Shift thunder line points at or after the inserted position
   state.thunderLine.points.forEach(p => {
     if (p.rowIndex >= ri) p.rowIndex++;
@@ -2172,6 +2301,27 @@ function deleteRowAt(ri) {
   });
   removeArrowsForRow(ri);
   selectedItems = [];
+  render();
+}
+
+// ===== Lane Management =====
+function addLane(ri) {
+  if (!state.rows[ri].lanes) state.rows[ri].lanes = 1;
+  state.rows[ri].lanes++;
+  render();
+}
+
+function removeLane(ri) {
+  const row = state.rows[ri];
+  if (!row.lanes || row.lanes <= 1) return;
+  const newLanes = row.lanes - 1;
+  // Clamp item lanes to fit within new lane count
+  row.items.forEach(item => {
+    if ((item.lane || 0) >= newLanes) {
+      item.lane = newLanes - 1;
+    }
+  });
+  row.lanes = newLanes;
   render();
 }
 
@@ -2228,6 +2378,15 @@ function loadJSONFile(file) {
       const data = JSON.parse(e.target.result);
       if (data.rows && data.startDate && data.endDate) {
         state = data;
+        // Ensure lanes/lane fields exist for backward compatibility
+        if (state.rows) {
+          state.rows.forEach(row => {
+            if (row.lanes === undefined) row.lanes = 1;
+            row.items.forEach(item => {
+              if (item.lane === undefined) item.lane = 0;
+            });
+          });
+        }
         if (!state.thunderLine) state.thunderLine = { visible: true, points: [], defaultDate: fmtDate(new Date()) };
         if (!state.arrows) state.arrows = [];
         if (!state.thunderLine.defaultDate) state.thunderLine.defaultDate = fmtDate(new Date());
@@ -2431,13 +2590,40 @@ function renderToCanvas() {
       ctx.fillText(line, 8, textStartY + li * lineH);
     });
 
+    // Lane separator lines
+    const numLanes = row.lanes || 1;
+    if (numLanes > 1) {
+      const canvasLabelExtra = Math.ceil(fs * 0.8) + 4;
+      let cHasAbove = false, cHasBelow = false;
+      row.items.forEach(item => {
+        if (item.type === 'task') {
+          const pos = item.taskLabelPosition || 'inside';
+          if (pos === 'above') cHasAbove = true;
+          if (pos === 'below') cHasBelow = true;
+        }
+      });
+      const cExtraTop = cHasAbove ? canvasLabelExtra : 0;
+      const cExtraBottom = cHasBelow ? canvasLabelExtra : 0;
+      const cLaneH = (rh - cExtraTop - cExtraBottom) / numLanes;
+      ctx.strokeStyle = '#ccc';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 3]);
+      for (let li = 1; li < numLanes; li++) {
+        const sepY = y + cExtraTop + cLaneH * li;
+        ctx.beginPath(); ctx.moveTo(sw, sepY); ctx.lineTo(totalW, sepY); ctx.stroke();
+      }
+      ctx.setLineDash([]);
+    }
+
     // Items
     row.items.forEach(item => {
       if (item.type === 'task') {
         const x1 = sw + getXForDate(item.startDate, columns, colWidth);
         const x2 = sw + getXForDateEnd(item.endDate, columns, colWidth);
         const w = Math.max(x2 - x1, 4);
-        const barY = y + (rh - bh) / 2;
+        const laneIdx = item.lane || 0;
+        const laneCenter = getLaneCenterY(row, laneIdx, rh);
+        const barY = y + laneCenter - bh / 2;
 
         ctx.fillStyle = item.color || COLORS[0];
         roundRect(ctx, x1, barY, w, bh, 4);
@@ -2482,7 +2668,9 @@ function renderToCanvas() {
         }
       } else if (item.type === 'milestone') {
         const x = sw + getXForDateCenter(item.date, columns, colWidth);
-        const my = y + rh / 2;
+        const msLaneIdx = item.lane || 0;
+        const msLaneCenter = getLaneCenterY(row, msLaneIdx, rh);
+        const my = y + msLaneCenter;
         ctx.fillStyle = item.milestoneColor || '#d32f2f';
         ctx.font = `${fs * 1.3}px sans-serif`;
         ctx.textBaseline = 'middle';
