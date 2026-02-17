@@ -236,6 +236,21 @@ body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; font-size
 .milestone-mark { font-size: 1.3em; color: #d32f2f; line-height: 1; }
 .milestone-label { color: #333; }
 
+#arrow-svg {
+  position: absolute; top: 0; left: 0; pointer-events: none; z-index: 4;
+}
+#arrow-svg path { pointer-events: stroke; cursor: pointer; }
+#arrow-svg path:hover { stroke: #d32f2f; stroke-width: 2.5; }
+
+.arrow-anchor {
+  position: absolute; width: 10px; height: 10px; border-radius: 50%;
+  background: var(--accent); opacity: 0; cursor: crosshair;
+  z-index: 6; pointer-events: auto; transform: translate(-50%, -50%);
+  transition: opacity .15s;
+}
+.edit-mode .gantt-item:hover .arrow-anchor,
+.arrow-anchor.active { opacity: 0.8; }
+
 #thunder-svg {
   position: absolute; top: 0; left: 0; pointer-events: none; z-index: 5;
 }
@@ -375,6 +390,7 @@ body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; font-size
     <div id="gantt-body">
       <div id="grid-layer"></div>
       <div id="items-layer"></div>
+      <svg id="arrow-svg"></svg>
       <svg id="thunder-svg"></svg>
       <div id="gantt-resize-handle"></div>
     </div>
@@ -453,6 +469,7 @@ const I18N = {
     imageDownloaded: 'Image downloaded',
     invalidFile: 'Invalid file format.',
     jsonError: 'Failed to load JSON: ',
+    deleteArrow: 'Delete Arrow',
   },
   ja: {
     title: '\u30AC\u30F3\u30C8\u30C1\u30E3\u30FC\u30C8',
@@ -518,6 +535,7 @@ const I18N = {
     imageDownloaded: '\u753B\u50CF\u3092\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u3057\u307E\u3057\u305F',
     invalidFile: '\u7121\u52B9\u306A\u30D5\u30A1\u30A4\u30EB\u5F62\u5F0F\u3067\u3059\u3002',
     jsonError: 'JSON\u306E\u8AAD\u307F\u8FBC\u307F\u306B\u5931\u6557\u3057\u307E\u3057\u305F: ',
+    deleteArrow: '\u77E2\u5370\u3092\u524A\u9664',
   }
 };
 
@@ -582,7 +600,8 @@ let state = {
     { name: 'Task 2', items: [] },
     { name: 'Task 3', items: [] }
   ],
-  thunderLine: { visible: true, points: [], defaultDate: fmtDate(new Date()) }
+  thunderLine: { visible: true, points: [], defaultDate: fmtDate(new Date()) },
+  arrows: []
 };
 
 let appMode = 'edit'; // edit | view
@@ -722,6 +741,7 @@ function render() {
   }
   renderBody();
   renderItems();
+  renderArrows();
   renderThunderLine();
   isRendering = false;
 }
@@ -993,6 +1013,8 @@ function moveRow(from, to) {
     }
   });
 
+  updateArrowsForMove(from, to);
+
   // Update selected items indices
   selectedItems = selectedItems.map(s => {
     let newRi = s.rowIndex;
@@ -1099,8 +1121,22 @@ function renderTask(layer, item, ri, ii, rh, bh, ry) {
     rHandle.addEventListener('mousedown', e => startResize(e, ri, ii, 'right'));
     el.appendChild(rHandle);
 
+    // Arrow anchors
+    const leftAnchor = document.createElement('div');
+    leftAnchor.className = 'arrow-anchor';
+    leftAnchor.style.left = '0px';
+    leftAnchor.style.top = (bh / 2) + 'px';
+    leftAnchor.addEventListener('mousedown', e => { e.stopPropagation(); e.preventDefault(); startArrowDrag(e, ri, ii, 'left'); });
+    el.appendChild(leftAnchor);
+    const rightAnchor = document.createElement('div');
+    rightAnchor.className = 'arrow-anchor';
+    rightAnchor.style.left = w + 'px';
+    rightAnchor.style.top = (bh / 2) + 'px';
+    rightAnchor.addEventListener('mousedown', e => { e.stopPropagation(); e.preventDefault(); startArrowDrag(e, ri, ii, 'right'); });
+    el.appendChild(rightAnchor);
+
     el.addEventListener('mousedown', e => {
-      if (e.target.classList.contains('resize-handle')) return;
+      if (e.target.classList.contains('resize-handle') || e.target.classList.contains('arrow-anchor')) return;
       if (el.querySelector('.inline-edit')) return;
       onItemMouseDown(e, ri, ii);
     });
@@ -1108,7 +1144,7 @@ function renderTask(layer, item, ri, ii, rh, bh, ry) {
       e.preventDefault(); e.stopPropagation();
       showContextMenu(e.clientX, e.clientY, [
         { label: t('editItem'), action: () => editItemDialog(ri, ii) },
-        { label: t('deleteItem'), action: () => { state.rows[ri].items.splice(ii, 1); selectedItems = []; render(); } }
+        { label: t('deleteItem'), action: () => { removeArrowsForItem(ri, ii); state.rows[ri].items.splice(ii, 1); selectedItems = []; render(); } }
       ]);
     });
   }
@@ -1150,7 +1186,16 @@ function renderMilestone(layer, item, ri, ii, rh, ry) {
   el.style.left = (x - 8) + 'px';
 
   if (appMode === 'edit') {
+    // Arrow anchor for milestone
+    const msAnchor = document.createElement('div');
+    msAnchor.className = 'arrow-anchor';
+    msAnchor.style.left = '8px';
+    msAnchor.style.top = '12px';
+    msAnchor.addEventListener('mousedown', e => { e.stopPropagation(); e.preventDefault(); startArrowDrag(e, ri, ii, 'center'); });
+    el.appendChild(msAnchor);
+
     el.addEventListener('mousedown', e => {
+      if (e.target.classList.contains('arrow-anchor')) return;
       if (el.querySelector('.inline-edit')) return;
       onItemMouseDown(e, ri, ii);
     });
@@ -1158,11 +1203,221 @@ function renderMilestone(layer, item, ri, ii, rh, ry) {
       e.preventDefault(); e.stopPropagation();
       showContextMenu(e.clientX, e.clientY, [
         { label: t('editMilestoneItem'), action: () => editItemDialog(ri, ii) },
-        { label: t('deleteItem'), action: () => { state.rows[ri].items.splice(ii, 1); selectedItems = []; render(); } }
+        { label: t('deleteItem'), action: () => { removeArrowsForItem(ri, ii); state.rows[ri].items.splice(ii, 1); selectedItems = []; render(); } }
       ]);
     });
   }
   layer.appendChild(el);
+}
+
+// ===== Arrow (Dependency) Rendering =====
+function getArrowAnchorPos(ref) {
+  const bh = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--bar-height'));
+  // Find visible row index for this originalIndex
+  const vi = visibleRows.findIndex(e => e.originalIndex === ref.rowIndex);
+  if (vi < 0) return null;
+  const row = state.rows[ref.rowIndex];
+  if (!row || !row.items[ref.itemIndex]) return null;
+  const item = row.items[ref.itemIndex];
+  const rh = rowHeights[vi];
+  const ry = rowYOffsets[vi];
+
+  if (item.type === 'task') {
+    const y = ry + (rh - bh) / 2 + bh / 2;
+    if (ref.edge === 'left') {
+      return { x: getXForDate(item.startDate, columns, colWidth), y };
+    } else {
+      return { x: getXForDateEnd(item.endDate, columns, colWidth), y };
+    }
+  } else if (item.type === 'milestone') {
+    return { x: getXForDateCenter(item.date, columns, colWidth), y: ry + rh / 2 };
+  }
+  return null;
+}
+
+function renderArrows() {
+  const svg = document.getElementById('arrow-svg');
+  const totalW = columns.length * colWidth;
+  svg.setAttribute('width', totalW);
+  svg.setAttribute('height', totalBodyHeight);
+  svg.innerHTML = '';
+
+  // Define arrowhead marker
+  const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+  const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+  marker.setAttribute('id', 'arrowhead');
+  marker.setAttribute('markerWidth', '8');
+  marker.setAttribute('markerHeight', '6');
+  marker.setAttribute('refX', '8');
+  marker.setAttribute('refY', '3');
+  marker.setAttribute('orient', 'auto');
+  const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+  polygon.setAttribute('points', '0 0, 8 3, 0 6');
+  polygon.setAttribute('fill', '#666');
+  marker.appendChild(polygon);
+  defs.appendChild(marker);
+  svg.appendChild(defs);
+
+  if (!state.arrows || state.arrows.length === 0) return;
+
+  state.arrows.forEach((arrow, ai) => {
+    const fromPos = getArrowAnchorPos(arrow.from);
+    const toPos = getArrowAnchorPos(arrow.to);
+    if (!fromPos || !toPos) return;
+
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    const d = buildArrowPath(fromPos, toPos);
+    path.setAttribute('d', d);
+    path.setAttribute('stroke', '#666');
+    path.setAttribute('stroke-width', '1.5');
+    path.setAttribute('fill', 'none');
+    path.setAttribute('marker-end', 'url(#arrowhead)');
+
+    if (appMode === 'edit') {
+      path.addEventListener('contextmenu', e => {
+        e.preventDefault(); e.stopPropagation();
+        showContextMenu(e.clientX, e.clientY, [
+          { label: t('deleteArrow'), action: () => { state.arrows.splice(ai, 1); render(); } }
+        ]);
+      });
+    }
+    svg.appendChild(path);
+  });
+}
+
+function buildArrowPath(from, to) {
+  return `M${from.x},${from.y} L${to.x},${to.y}`;
+}
+
+// ===== Arrow Drag Creation =====
+function startArrowDrag(e, ri, ii, edge) {
+  const bodyScroll = document.getElementById('gantt-body-scroll');
+  const scrollRect = bodyScroll.getBoundingClientRect();
+  const svg = document.getElementById('arrow-svg');
+
+  const fromRef = { rowIndex: ri, itemIndex: ii, edge };
+  const fromPos = getArrowAnchorPos(fromRef);
+  if (!fromPos) return;
+
+  // Create temporary line for visual feedback
+  const tempLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+  tempLine.setAttribute('x1', fromPos.x);
+  tempLine.setAttribute('y1', fromPos.y);
+  tempLine.setAttribute('x2', fromPos.x);
+  tempLine.setAttribute('y2', fromPos.y);
+  tempLine.setAttribute('stroke', '#2196F3');
+  tempLine.setAttribute('stroke-width', '2');
+  tempLine.setAttribute('stroke-dasharray', '4,3');
+  svg.appendChild(tempLine);
+
+  // Show all anchors during drag
+  document.querySelectorAll('.arrow-anchor').forEach(a => a.classList.add('active'));
+
+  function onMove(ev) {
+    const mx = ev.clientX - scrollRect.left + bodyScroll.scrollLeft;
+    const my = ev.clientY - scrollRect.top + bodyScroll.scrollTop;
+    tempLine.setAttribute('x2', mx);
+    tempLine.setAttribute('y2', my);
+  }
+
+  function onUp(ev) {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    tempLine.remove();
+    document.querySelectorAll('.arrow-anchor').forEach(a => a.classList.remove('active'));
+
+    // Find drop target anchor
+    const mx = ev.clientX - scrollRect.left + bodyScroll.scrollLeft;
+    const my = ev.clientY - scrollRect.top + bodyScroll.scrollTop;
+    const target = findAnchorAtPos(mx, my, ri, ii);
+    if (target) {
+      // Don't allow self-arrows
+      if (target.rowIndex !== ri || target.itemIndex !== ii) {
+        state.arrows.push({ from: fromRef, to: target });
+        render();
+      }
+    }
+  }
+
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+}
+
+function findAnchorAtPos(mx, my, excludeRi, excludeIi) {
+  const bh = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--bar-height'));
+  const threshold = 15;
+  let best = null, bestDist = threshold;
+
+  visibleRows.forEach((entry, vi) => {
+    const ri = entry.originalIndex;
+    const rh = rowHeights[vi];
+    const ry = rowYOffsets[vi];
+    entry.row.items.forEach((item, ii) => {
+      if (ri === excludeRi && ii === excludeIi) return;
+      if (item.type === 'task') {
+        const cy = ry + (rh - bh) / 2 + bh / 2;
+        const leftX = getXForDate(item.startDate, columns, colWidth);
+        const rightX = getXForDateEnd(item.endDate, columns, colWidth);
+        // Check left anchor
+        let d = Math.hypot(mx - leftX, my - cy);
+        if (d < bestDist) { bestDist = d; best = { rowIndex: ri, itemIndex: ii, edge: 'left' }; }
+        // Check right anchor
+        d = Math.hypot(mx - rightX, my - cy);
+        if (d < bestDist) { bestDist = d; best = { rowIndex: ri, itemIndex: ii, edge: 'right' }; }
+      } else if (item.type === 'milestone') {
+        const cx = getXForDateCenter(item.date, columns, colWidth);
+        const cy = ry + rh / 2;
+        const d = Math.hypot(mx - cx, my - cy);
+        if (d < bestDist) { bestDist = d; best = { rowIndex: ri, itemIndex: ii, edge: 'center' }; }
+      }
+    });
+  });
+  return best;
+}
+
+// Remove arrows referencing a specific item, and adjust indices after item deletion
+function removeArrowsForItem(ri, ii) {
+  state.arrows = state.arrows.filter(a => {
+    return !(a.from.rowIndex === ri && a.from.itemIndex === ii) &&
+           !(a.to.rowIndex === ri && a.to.itemIndex === ii);
+  });
+  // Shift itemIndex for items after the deleted one in the same row
+  state.arrows.forEach(a => {
+    if (a.from.rowIndex === ri && a.from.itemIndex > ii) a.from.itemIndex--;
+    if (a.to.rowIndex === ri && a.to.itemIndex > ii) a.to.itemIndex--;
+  });
+}
+
+// Remove arrows for a deleted row, shift row indices
+function removeArrowsForRow(ri) {
+  state.arrows = state.arrows.filter(a => a.from.rowIndex !== ri && a.to.rowIndex !== ri);
+  state.arrows.forEach(a => {
+    if (a.from.rowIndex > ri) a.from.rowIndex--;
+    if (a.to.rowIndex > ri) a.to.rowIndex--;
+  });
+}
+
+// Shift arrow row indices after row insertion
+function shiftArrowsForInsert(ri) {
+  state.arrows.forEach(a => {
+    if (a.from.rowIndex >= ri) a.from.rowIndex++;
+    if (a.to.rowIndex >= ri) a.to.rowIndex++;
+  });
+}
+
+// Update arrow indices after row move
+function updateArrowsForMove(from, to) {
+  state.arrows.forEach(a => {
+    [a.from, a.to].forEach(ref => {
+      if (ref.rowIndex === from) {
+        ref.rowIndex = to;
+      } else if (from < to) {
+        if (ref.rowIndex > from && ref.rowIndex <= to) ref.rowIndex--;
+      } else {
+        if (ref.rowIndex >= to && ref.rowIndex < from) ref.rowIndex++;
+      }
+    });
+  });
 }
 
 function getThunderPointsForRender() {
@@ -1788,6 +2043,7 @@ function deleteSelected() {
   // Delete in reverse order to maintain indices
   const sorted = [...selectedItems].sort((a, b) => b.rowIndex - a.rowIndex || b.itemIndex - a.itemIndex);
   sorted.forEach(s => {
+    removeArrowsForItem(s.rowIndex, s.itemIndex);
     state.rows[s.rowIndex].items.splice(s.itemIndex, 1);
   });
   selectedItems = [];
@@ -1898,6 +2154,7 @@ function insertRowAt(ri) {
   state.thunderLine.points.forEach(p => {
     if (p.rowIndex >= ri) p.rowIndex++;
   });
+  shiftArrowsForInsert(ri);
   // Shift selected items
   selectedItems = selectedItems.map(s => ({
     rowIndex: s.rowIndex >= ri ? s.rowIndex + 1 : s.rowIndex,
@@ -1913,6 +2170,7 @@ function deleteRowAt(ri) {
   state.thunderLine.points.forEach(p => {
     if (p.rowIndex > ri) p.rowIndex--;
   });
+  removeArrowsForRow(ri);
   selectedItems = [];
   render();
 }
@@ -1971,6 +2229,7 @@ function loadJSONFile(file) {
       if (data.rows && data.startDate && data.endDate) {
         state = data;
         if (!state.thunderLine) state.thunderLine = { visible: true, points: [], defaultDate: fmtDate(new Date()) };
+        if (!state.arrows) state.arrows = [];
         if (!state.thunderLine.defaultDate) state.thunderLine.defaultDate = fmtDate(new Date());
         if (!state.fontSize) state.fontSize = 14;
         if (state.cornerLabel === undefined) state.cornerLabel = '';
@@ -2244,6 +2503,36 @@ function renderToCanvas() {
       }
     });
   });
+
+  // Arrows
+  if (state.arrows && state.arrows.length > 0) {
+    state.arrows.forEach(arrow => {
+      const fromPos = getArrowAnchorPos(arrow.from);
+      const toPos = getArrowAnchorPos(arrow.to);
+      if (!fromPos || !toPos) return;
+      const fp = { x: sw + fromPos.x, y: hh + fromPos.y };
+      const tp = { x: sw + toPos.x, y: hh + toPos.y };
+
+      // Draw straight arrow line
+      ctx.strokeStyle = '#666';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(fp.x, fp.y);
+      ctx.lineTo(tp.x, tp.y);
+      ctx.stroke();
+
+      // Draw arrowhead
+      const angle = Math.atan2(tp.y - fp.y, tp.x - fp.x);
+      const headLen = 8;
+      ctx.fillStyle = '#666';
+      ctx.beginPath();
+      ctx.moveTo(tp.x, tp.y);
+      ctx.lineTo(tp.x - headLen * Math.cos(angle - Math.PI/6), tp.y - headLen * Math.sin(angle - Math.PI/6));
+      ctx.lineTo(tp.x - headLen * Math.cos(angle + Math.PI/6), tp.y - headLen * Math.sin(angle + Math.PI/6));
+      ctx.closePath();
+      ctx.fill();
+    });
+  }
 
   // Thunder line
   if (state.thunderLine.visible && visibleRows.length > 0) {
