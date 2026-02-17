@@ -359,6 +359,7 @@ body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; font-size
   </div>
   <div class="toolbar-group" id="thunder-controls">
     <div class="toolbar-sep"></div>
+    <label><input type="checkbox" id="chk-arrows" checked onchange="toggleArrows(this.checked)"> <span id="lbl-arrows"></span></label>
     <label><input type="checkbox" id="chk-thunder" checked onchange="toggleThunder(this.checked)"> <span id="lbl-thunder"></span></label>
     <label id="lbl-base-date"></label>
     <input type="date" id="thunder-default-date" onchange="changeThunderDefault(this.value)">
@@ -477,6 +478,7 @@ const I18N = {
     invalidFile: 'Invalid file format.',
     jsonError: 'Failed to load JSON: ',
     deleteArrow: 'Delete Arrow',
+    arrows: 'Arrows',
     addLane: 'Add Lane',
     removeLane: 'Remove Lane',
     lane: 'Lane',
@@ -546,6 +548,7 @@ const I18N = {
     invalidFile: '\u7121\u52B9\u306A\u30D5\u30A1\u30A4\u30EB\u5F62\u5F0F\u3067\u3059\u3002',
     jsonError: 'JSON\u306E\u8AAD\u307F\u8FBC\u307F\u306B\u5931\u6557\u3057\u307E\u3057\u305F: ',
     deleteArrow: '\u77E2\u5370\u3092\u524A\u9664',
+    arrows: '\u77E2\u5370',
     addLane: '\u30EC\u30FC\u30F3\u3092\u8FFD\u52A0',
     removeLane: '\u30EC\u30FC\u30F3\u3092\u524A\u9664',
     lane: '\u30EC\u30FC\u30F3',
@@ -573,6 +576,7 @@ function updateUIText() {
   document.getElementById('btn-rm-col-start').textContent = t('rmColStart');
   document.getElementById('btn-rm-col-end').textContent = t('rmColEnd');
   document.getElementById('btn-add-row').textContent = t('addRow');
+  document.getElementById('lbl-arrows').textContent = t('arrows');
   document.getElementById('lbl-thunder').textContent = t('thunderLine');
   document.getElementById('btn-reset-progress').textContent = t('resetAllProgress');
   document.getElementById('lbl-base-date').textContent = t('baseDate');
@@ -614,6 +618,7 @@ let state = {
     { name: 'Task 3', items: [], lanes: 1 }
   ],
   thunderLine: { visible: true, points: [], defaultDate: fmtDate(new Date()) },
+  arrowsVisible: true,
   arrows: []
 };
 
@@ -1203,18 +1208,20 @@ function renderTask(layer, item, ri, ii, rh, bh, ry) {
     el.appendChild(rHandle);
 
     // Arrow anchors
-    const leftAnchor = document.createElement('div');
-    leftAnchor.className = 'arrow-anchor';
-    leftAnchor.style.left = '0px';
-    leftAnchor.style.top = (bh / 2) + 'px';
-    leftAnchor.addEventListener('mousedown', e => { e.stopPropagation(); e.preventDefault(); startArrowDrag(e, ri, ii, 'left'); });
-    el.appendChild(leftAnchor);
-    const rightAnchor = document.createElement('div');
-    rightAnchor.className = 'arrow-anchor';
-    rightAnchor.style.left = w + 'px';
-    rightAnchor.style.top = (bh / 2) + 'px';
-    rightAnchor.addEventListener('mousedown', e => { e.stopPropagation(); e.preventDefault(); startArrowDrag(e, ri, ii, 'right'); });
-    el.appendChild(rightAnchor);
+    if (state.arrowsVisible !== false) {
+      const leftAnchor = document.createElement('div');
+      leftAnchor.className = 'arrow-anchor';
+      leftAnchor.style.left = '0px';
+      leftAnchor.style.top = (bh / 2) + 'px';
+      leftAnchor.addEventListener('mousedown', e => { e.stopPropagation(); e.preventDefault(); startArrowDrag(e, ri, ii, 'left'); });
+      el.appendChild(leftAnchor);
+      const rightAnchor = document.createElement('div');
+      rightAnchor.className = 'arrow-anchor';
+      rightAnchor.style.left = w + 'px';
+      rightAnchor.style.top = (bh / 2) + 'px';
+      rightAnchor.addEventListener('mousedown', e => { e.stopPropagation(); e.preventDefault(); startArrowDrag(e, ri, ii, 'right'); });
+      el.appendChild(rightAnchor);
+    }
 
     el.addEventListener('mousedown', e => {
       if (e.target.classList.contains('resize-handle') || e.target.classList.contains('arrow-anchor')) return;
@@ -1271,12 +1278,14 @@ function renderMilestone(layer, item, ri, ii, rh, ry) {
 
   if (appMode === 'edit') {
     // Arrow anchor for milestone
-    const msAnchor = document.createElement('div');
-    msAnchor.className = 'arrow-anchor';
-    msAnchor.style.left = '8px';
-    msAnchor.style.top = '12px';
-    msAnchor.addEventListener('mousedown', e => { e.stopPropagation(); e.preventDefault(); startArrowDrag(e, ri, ii, 'center'); });
-    el.appendChild(msAnchor);
+    if (state.arrowsVisible !== false) {
+      const msAnchor = document.createElement('div');
+      msAnchor.className = 'arrow-anchor';
+      msAnchor.style.left = '8px';
+      msAnchor.style.top = '12px';
+      msAnchor.addEventListener('mousedown', e => { e.stopPropagation(); e.preventDefault(); startArrowDrag(e, ri, ii, 'center'); });
+      el.appendChild(msAnchor);
+    }
 
     el.addEventListener('mousedown', e => {
       if (e.target.classList.contains('arrow-anchor')) return;
@@ -1327,6 +1336,8 @@ function renderArrows() {
   svg.setAttribute('width', totalW);
   svg.setAttribute('height', totalBodyHeight);
   svg.innerHTML = '';
+
+  if (state.arrowsVisible === false) return;
 
   // Define arrowhead marker
   const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
@@ -1964,6 +1975,11 @@ function addThunderPoint(ri, lane, dateStr) {
   render();
 }
 
+function toggleArrows(visible) {
+  state.arrowsVisible = visible;
+  render();
+}
+
 function toggleThunder(visible) {
   state.thunderLine.visible = visible;
   render();
@@ -2422,6 +2438,7 @@ function loadJSONFile(file) {
         }
         if (!state.thunderLine) state.thunderLine = { visible: true, points: [], defaultDate: fmtDate(new Date()) };
         if (!state.arrows) state.arrows = [];
+        if (state.arrowsVisible === undefined) state.arrowsVisible = true;
         if (!state.thunderLine.defaultDate) state.thunderLine.defaultDate = fmtDate(new Date());
         // Ensure thunder point lane fields exist
         if (state.thunderLine.points) {
@@ -2435,6 +2452,7 @@ function loadJSONFile(file) {
         document.getElementById('sel-lang').value = currentLang;
         updateUIText();
         document.getElementById('sel-unit').value = state.timeUnit || 'month';
+        document.getElementById('chk-arrows').checked = state.arrowsVisible !== false;
         document.getElementById('chk-thunder').checked = state.thunderLine.visible;
         document.getElementById('thunder-default-date').value = state.thunderLine.defaultDate;
         // Restore sidebar width
@@ -2732,7 +2750,7 @@ function renderToCanvas() {
   });
 
   // Arrows
-  if (state.arrows && state.arrows.length > 0) {
+  if (state.arrowsVisible !== false && state.arrows && state.arrows.length > 0) {
     state.arrows.forEach(arrow => {
       const fromPos = getArrowAnchorPos(arrow.from);
       const toPos = getArrowAnchorPos(arrow.to);
