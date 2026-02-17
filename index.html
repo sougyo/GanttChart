@@ -1509,22 +1509,52 @@ function updateArrowsForMove(from, to) {
 }
 
 function getThunderPointsForRender() {
-  // Build a point for every visible row: use explicit point if exists, otherwise default date
+  // Build a point for every lane of every visible row: use explicit point if exists, otherwise default date
   const defDate = state.thunderLine.defaultDate || fmtDate(new Date());
   const explicitMap = {};
   state.thunderLine.points.forEach((p, i) => {
-    explicitMap[p.rowIndex] = { date: p.date, explicitIndex: i };
+    const key = p.rowIndex + '_' + (p.lane || 0);
+    explicitMap[key] = { date: p.date, explicitIndex: i };
   });
   const allPoints = [];
   visibleRows.forEach((entry, vi) => {
     const ri = entry.originalIndex;
-    if (explicitMap[ri] !== undefined) {
-      allPoints.push({ rowIndex: ri, displayIndex: vi, date: explicitMap[ri].date, explicit: true, explicitIndex: explicitMap[ri].explicitIndex });
-    } else {
-      allPoints.push({ rowIndex: ri, displayIndex: vi, date: defDate, explicit: false, explicitIndex: -1 });
+    const numLanes = entry.row.lanes || 1;
+    for (let li = 0; li < numLanes; li++) {
+      const key = ri + '_' + li;
+      if (explicitMap[key] !== undefined) {
+        allPoints.push({ rowIndex: ri, lane: li, displayIndex: vi, date: explicitMap[key].date, explicit: true, explicitIndex: explicitMap[key].explicitIndex });
+      } else {
+        allPoints.push({ rowIndex: ri, lane: li, displayIndex: vi, date: defDate, explicit: false, explicitIndex: -1 });
+      }
     }
   });
   return allPoints;
+}
+
+function getThunderPointY(p) {
+  const vi = p.displayIndex;
+  const row = visibleRows[vi].row;
+  const rh = rowHeights[vi];
+  return rowYOffsets[vi] + getLaneCenterY(row, p.lane, rh);
+}
+
+function getThunderLaneBoundaryY(p) {
+  // Bottom edge of this lane within the row
+  const vi = p.displayIndex;
+  const row = visibleRows[vi].row;
+  const rh = rowHeights[vi];
+  const numLanes = row.lanes || 1;
+  const labelExtra = Math.ceil(state.fontSize * 0.8) + 4;
+  let hasAbove = false, hasBelow = false;
+  row.items.forEach(item => {
+    if (item.type === 'task' && (item.taskLabelPosition || 'inside') === 'above') hasAbove = true;
+    if (item.type === 'task' && (item.taskLabelPosition || 'inside') === 'below') hasBelow = true;
+  });
+  const extraTop = hasAbove ? labelExtra : 0;
+  const extraBottom = hasBelow ? labelExtra : 0;
+  const laneH = (rh - extraTop - extraBottom) / numLanes;
+  return rowYOffsets[vi] + extraTop + laneH * (p.lane + 1);
 }
 
 function renderThunderLine() {
@@ -1537,17 +1567,16 @@ function renderThunderLine() {
   if (!state.thunderLine.visible || visibleRows.length === 0) return;
 
   const pts = getThunderPointsForRender();
-  const coords = pts.map(p => {
-    const vi = p.displayIndex;
-    return {
-      x: getXForDateCenter(p.date, columns, colWidth),
-      y: rowYOffsets[vi] + rowHeights[vi] / 2,
-      explicit: p.explicit,
-      explicitIndex: p.explicitIndex,
-      rowIndex: p.rowIndex,
-      displayIndex: vi
-    };
-  });
+  const coords = pts.map(p => ({
+    x: getXForDateCenter(p.date, columns, colWidth),
+    y: getThunderPointY(p),
+    boundaryY: getThunderLaneBoundaryY(p),
+    explicit: p.explicit,
+    explicitIndex: p.explicitIndex,
+    rowIndex: p.rowIndex,
+    lane: p.lane,
+    displayIndex: p.displayIndex
+  }));
 
   if (coords.length > 0) {
     const defX = getXForDateCenter(state.thunderLine.defaultDate || fmtDate(new Date()), columns, colWidth);
@@ -1555,8 +1584,7 @@ function renderThunderLine() {
     pathParts.push(`${defX},${0}`);
     for (let i = 0; i < coords.length; i++) {
       pathParts.push(`${coords[i].x},${coords[i].y}`);
-      const boundaryY = rowYOffsets[coords[i].displayIndex] + rowHeights[coords[i].displayIndex];
-      pathParts.push(`${defX},${boundaryY}`);
+      pathParts.push(`${defX},${coords[i].boundaryY}`);
     }
 
     const polyline = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
@@ -1580,7 +1608,7 @@ function renderThunderLine() {
       circle.addEventListener('mousedown', e => {
         if (e.button !== 0) return;
         e.preventDefault(); e.stopPropagation();
-        startThunderDotDrag(e, c.rowIndex, c.explicit, c.explicitIndex);
+        startThunderDotDrag(e, c.rowIndex, c.lane, c.explicit, c.explicitIndex);
       });
       circle.addEventListener('contextmenu', e => {
         e.preventDefault(); e.stopPropagation();
@@ -1596,7 +1624,7 @@ function renderThunderLine() {
 }
 
 // ===== Thunder Dot Drag =====
-function startThunderDotDrag(e, rowIndex, isExplicit, explicitIndex) {
+function startThunderDotDrag(e, rowIndex, lane, isExplicit, explicitIndex) {
   const bodyScroll = document.getElementById('gantt-body-scroll');
   const scrollRect = bodyScroll.getBoundingClientRect();
   let pointIndex = explicitIndex;
@@ -1606,7 +1634,7 @@ function startThunderDotDrag(e, rowIndex, isExplicit, explicitIndex) {
   function ensureExplicit() {
     if (!isExplicit && pointIndex === -1) {
       const defDate = state.thunderLine.defaultDate || fmtDate(new Date());
-      state.thunderLine.points.push({ rowIndex: rowIndex, date: defDate });
+      state.thunderLine.points.push({ rowIndex: rowIndex, lane: lane, date: defDate });
       pointIndex = state.thunderLine.points.length - 1;
       isExplicit = true;
     }
@@ -1896,7 +1924,7 @@ document.addEventListener('DOMContentLoaded', () => {
       menuItems.push({ label: t('removeLane'), action: () => { removeLane(ri); } });
     }
     menuItems.push({ sep: true });
-    menuItems.push({ label: t('addProgress'), action: () => { addThunderPoint(ri, clickDateStr); } });
+    menuItems.push({ label: t('addProgress'), action: () => { addThunderPoint(ri, clickedLane, clickDateStr); } });
 
     if (selectedItems.length > 0) {
       menuItems.push({ sep: true });
@@ -1926,12 +1954,12 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ===== Thunder Line =====
-function addThunderPoint(ri, dateStr) {
-  const existing = state.thunderLine.points.findIndex(p => p.rowIndex === ri);
+function addThunderPoint(ri, lane, dateStr) {
+  const existing = state.thunderLine.points.findIndex(p => p.rowIndex === ri && (p.lane || 0) === lane);
   if (existing >= 0) {
     state.thunderLine.points[existing].date = dateStr;
   } else {
-    state.thunderLine.points.push({ rowIndex: ri, date: dateStr });
+    state.thunderLine.points.push({ rowIndex: ri, lane: lane, date: dateStr });
   }
   render();
 }
@@ -2321,6 +2349,11 @@ function removeLane(ri) {
       item.lane = newLanes - 1;
     }
   });
+  // Remove thunder points for the removed lane and clamp others
+  state.thunderLine.points = state.thunderLine.points.filter(p => {
+    if (p.rowIndex === ri && (p.lane || 0) >= newLanes) return false;
+    return true;
+  });
   row.lanes = newLanes;
   render();
 }
@@ -2390,6 +2423,12 @@ function loadJSONFile(file) {
         if (!state.thunderLine) state.thunderLine = { visible: true, points: [], defaultDate: fmtDate(new Date()) };
         if (!state.arrows) state.arrows = [];
         if (!state.thunderLine.defaultDate) state.thunderLine.defaultDate = fmtDate(new Date());
+        // Ensure thunder point lane fields exist
+        if (state.thunderLine.points) {
+          state.thunderLine.points.forEach(p => {
+            if (p.lane === undefined) p.lane = 0;
+          });
+        }
         if (!state.fontSize) state.fontSize = 14;
         if (state.cornerLabel === undefined) state.cornerLabel = '';
         if (state.lang) { currentLang = state.lang; } else { state.lang = currentLang; }
@@ -2727,7 +2766,8 @@ function renderToCanvas() {
     const pts = getThunderPointsForRender();
     const coords = pts.map(p => ({
       x: sw + getXForDateCenter(p.date, columns, colWidth),
-      y: hh + rowYOffsets[p.displayIndex] + rowHeights[p.displayIndex] / 2,
+      y: hh + getThunderPointY(p),
+      boundaryY: hh + getThunderLaneBoundaryY(p),
       explicit: p.explicit,
       displayIndex: p.displayIndex
     }));
@@ -2740,8 +2780,7 @@ function renderToCanvas() {
       ctx.moveTo(defX, hh);
       for (let i = 0; i < coords.length; i++) {
         ctx.lineTo(coords[i].x, coords[i].y);
-        const boundaryY = hh + rowYOffsets[coords[i].displayIndex] + rowHeights[coords[i].displayIndex];
-        ctx.lineTo(defX, boundaryY);
+        ctx.lineTo(defX, coords[i].boundaryY);
       }
       ctx.stroke();
     }
