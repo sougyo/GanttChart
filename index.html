@@ -1722,8 +1722,25 @@ function startThunderDotDrag(e, rowIndex, lane, isExplicit, explicitIndex) {
     ensureExplicit();
     const mx = ev.clientX - scrollRect.left + bodyScroll.scrollLeft;
     const curDate = getDateForX(mx, columns, colWidth);
-    state.thunderLine.points[pointIndex].date = fmtDate(curDate);
-    showDragTooltip(ev, formatDateLabel(curDate));
+    const curDateStr = fmtDate(curDate);
+    state.thunderLine.points[pointIndex].date = curDateStr;
+    let tooltipText = formatDateLabel(curDate);
+    const row = state.rows[rowIndex];
+    if (row) {
+      row.items.forEach(item => {
+        if (item.type !== 'task') return;
+        if ((item.lane || 0) !== lane) return;
+        const s = parseDate(item.startDate), e = parseDate(item.endDate);
+        const totalDays = daysBetween(s, e);
+        if (totalDays <= 0) return;
+        const elapsed = daysBetween(s, curDate);
+        if (elapsed >= 0 && elapsed <= totalDays) {
+          const pct = Math.round(elapsed / totalDays * 100);
+          tooltipText += ` (${pct}%)`;
+        }
+      });
+    }
+    showDragTooltip(ev, tooltipText);
     renderThunderLine();
   }
 
