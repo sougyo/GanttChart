@@ -482,6 +482,10 @@ const I18N = {
     addLane: 'Add Lane',
     removeLane: 'Remove Lane',
     lane: 'Lane',
+    editRow: 'Edit Row\u2026',
+    rowColor: 'Row Color',
+    rowMemo: 'Memo',
+    noColor: 'None (default)',
   },
   ja: {
     title: '\u30AC\u30F3\u30C8\u30C1\u30E3\u30FC\u30C8',
@@ -552,6 +556,10 @@ const I18N = {
     addLane: '\u30EC\u30FC\u30F3\u3092\u8FFD\u52A0',
     removeLane: '\u30EC\u30FC\u30F3\u3092\u524A\u9664',
     lane: '\u30EC\u30FC\u30F3',
+    editRow: '\u884C\u3092\u7DE8\u96C6\u2026',
+    rowColor: '\u884C\u306E\u8272',
+    rowMemo: '\u30E1\u30E2',
+    noColor: '\u306A\u3057\uFF08\u30C7\u30D5\u30A9\u30EB\u30C8\uFF09',
   }
 };
 
@@ -674,6 +682,7 @@ let isDragging = false;
 let dragData = null;
 
 const COLORS = ['#4CAF50','#2196F3','#FF9800','#9C27B0','#F44336','#00BCD4','#795548','#607D8B','#E91E63','#3F51B5'];
+const ROW_COLORS = [null,'#E3F2FD','#E8F5E9','#FFF3E0','#FCE4EC','#F3E5F5','#FFFDE7','#E0F2F1','#EFEBE9'];
 
 // ===== Date Utils =====
 function parseDate(s) { const p = s.split('-'); return new Date(+p[0], +p[1]-1, +p[2]); }
@@ -969,6 +978,7 @@ function renderSidebar() {
       div.className = 'sidebar-row';
       div.style.minHeight = rowHeights[ri] + 'px';
       div.dataset.rowIndex = ri;
+      if (row.color) div.style.background = row.color;
 
       const vis = document.createElement('span');
       vis.className = 'sidebar-visibility';
@@ -1017,6 +1027,16 @@ function renderSidebar() {
       btns.appendChild(btnDel);
       div.appendChild(btns);
 
+      div.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        showContextMenu(e.clientX, e.clientY, [
+          { label: t('editRow'), action: () => editRowDialog(ri) },
+          { sep: true },
+          { label: t('addRowAbove'), action: () => insertRowAt(ri) },
+          { label: t('deleteRow'), action: () => { if(state.rows.length>1) deleteRowAt(ri); } },
+        ]);
+      });
+
       sb.appendChild(div);
     });
   } else {
@@ -1025,6 +1045,7 @@ function renderSidebar() {
       const div = document.createElement('div');
       div.className = 'sidebar-row';
       div.style.minHeight = rowHeights[vi] + 'px';
+      if (entry.row.color) div.style.background = entry.row.color;
       const nameEl = document.createElement('span');
       nameEl.className = 'sidebar-name';
       nameEl.textContent = entry.row.name;
@@ -1143,6 +1164,7 @@ function renderBody() {
     const rowDiv = document.createElement('div');
     rowDiv.className = 'body-row';
     rowDiv.style.height = rowHeights[vi] + 'px';
+    if (entry.row.color) rowDiv.style.background = entry.row.color;
     prevYear = null;
     columns.forEach((col, ci) => {
       const cell = document.createElement('div');
@@ -2090,6 +2112,33 @@ function showModal(title, fields, onOk) {
       });
       inputs[f.key] = { value: selected };
       div.appendChild(container);
+    } else if (f.type === 'rowColor') {
+      const container = document.createElement('div');
+      container.className = 'color-options';
+      let selected = f.value || null;
+      ROW_COLORS.forEach(c => {
+        const opt = document.createElement('div');
+        opt.className = 'color-opt' + (c === selected ? ' selected' : '');
+        if (c === null) {
+          opt.style.background = '#fff';
+          opt.style.position = 'relative';
+          opt.style.overflow = 'hidden';
+          const line = document.createElement('div');
+          line.style.cssText = 'position:absolute;top:0;left:50%;width:2px;height:141%;background:#d00;transform:rotate(45deg);transform-origin:top center;';
+          opt.appendChild(line);
+        } else {
+          opt.style.background = c;
+        }
+        opt.onclick = () => {
+          container.querySelectorAll('.color-opt').forEach(o => o.classList.remove('selected'));
+          opt.classList.add('selected');
+          selected = c;
+          inputs[f.key] = { value: c };
+        };
+        container.appendChild(opt);
+      });
+      inputs[f.key] = { value: selected };
+      div.appendChild(container);
     } else if (f.type === 'select') {
       const sel = document.createElement('select');
       f.options.forEach(o => {
@@ -2161,6 +2210,18 @@ function getLaneOptions(numLanes) {
     opts.push({ value: String(i), label: `${t('lane')} ${i + 1}` });
   }
   return opts;
+}
+
+function editRowDialog(ri) {
+  const row = state.rows[ri];
+  showModal(t('editRow'), [
+    { key: 'color', label: t('rowColor'), type: 'rowColor', value: row.color || null },
+    { key: 'memo', label: t('rowMemo'), type: 'textarea', value: row.memo || '' },
+  ], vals => {
+    row.color = vals.color || null;
+    row.memo = vals.memo;
+    render();
+  });
 }
 
 function addTaskDialog(ri, dateStr, clickedLane) {
@@ -2490,6 +2551,8 @@ function loadJSONFile(file) {
         if (state.rows) {
           state.rows.forEach(row => {
             if (row.lanes === undefined) row.lanes = 1;
+            if (row.color === undefined) row.color = null;
+            if (row.memo === undefined) row.memo = '';
             row.items.forEach(item => {
               if (item.lane === undefined) item.lane = 0;
             });
@@ -2604,8 +2667,13 @@ function renderToCanvas() {
   visibleRows.forEach((entry, vi) => {
     const rh = rowHeights[vi];
     const y = hh + rowYOffsets[vi];
-    ctx.fillStyle = vi % 2 === 0 ? '#fafbfc' : '#fff';
-    ctx.fillRect(0, y, sw, rh);
+    if (entry.row.color) {
+      ctx.fillStyle = entry.row.color;
+      ctx.fillRect(0, y, totalW, rh);
+    } else {
+      ctx.fillStyle = vi % 2 === 0 ? '#fafbfc' : '#fff';
+      ctx.fillRect(0, y, sw, rh);
+    }
   });
 
   // ===== Pass 2: Grid lines =====
