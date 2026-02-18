@@ -361,6 +361,7 @@ body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; font-size
     <div class="toolbar-sep"></div>
     <label><input type="checkbox" id="chk-arrows" checked onchange="toggleArrows(this.checked)"> <span id="lbl-arrows"></span></label>
     <label><input type="checkbox" id="chk-thunder" checked onchange="toggleThunder(this.checked)"> <span id="lbl-thunder"></span></label>
+    <label><input type="checkbox" id="chk-progress-shading" onchange="toggleProgressShading(this.checked)"> <span id="lbl-progress-shading"></span></label>
     <label id="lbl-base-date"></label>
     <input type="date" id="thunder-default-date" onchange="changeThunderDefault(this.value)">
     <button id="btn-reset-progress" onclick="resetProgressPoints()"></button>
@@ -486,6 +487,7 @@ const I18N = {
     rowColor: 'Row Color',
     rowMemo: 'Memo',
     noColor: 'None (default)',
+    progressShading: 'Progress Shading',
   },
   ja: {
     title: '\u30AC\u30F3\u30C8\u30C1\u30E3\u30FC\u30C8',
@@ -560,6 +562,7 @@ const I18N = {
     rowColor: '\u884C\u306E\u8272',
     rowMemo: '\u30E1\u30E2',
     noColor: '\u306A\u3057\uFF08\u30C7\u30D5\u30A9\u30EB\u30C8\uFF09',
+    progressShading: '\u9032\u6357\u8868\u793A',
   }
 };
 
@@ -586,6 +589,7 @@ function updateUIText() {
   document.getElementById('btn-add-row').textContent = t('addRow');
   document.getElementById('lbl-arrows').textContent = t('arrows');
   document.getElementById('lbl-thunder').textContent = t('thunderLine');
+  document.getElementById('lbl-progress-shading').textContent = t('progressShading');
   document.getElementById('btn-reset-progress').textContent = t('resetAllProgress');
   document.getElementById('lbl-base-date').textContent = t('baseDate');
   document.getElementById('lbl-range').textContent = t('range');
@@ -627,7 +631,8 @@ let state = {
   ],
   thunderLine: { visible: true, points: [], defaultDate: fmtDate(new Date()) },
   arrowsVisible: true,
-  arrows: []
+  arrows: [],
+  progressShading: false
 };
 
 let appMode = 'edit'; // edit | view
@@ -1260,6 +1265,23 @@ function renderTask(layer, item, ri, ii, rh, bh, ry) {
   }
   el.title = `${item.label || ''}\n${item.startDate} 〜 ${item.endDate}${item.memo ? '\n' + item.memo : ''}`;
 
+  // Progress shading overlay
+  const progressDate = getProgressDateForLane(ri, item.lane || 0);
+  if (progressDate) {
+    const taskStart = parseDate(item.startDate), taskEnd = parseDate(item.endDate);
+    const progD = parseDate(progressDate);
+    const totalDays = daysBetween(taskStart, taskEnd);
+    if (totalDays > 0) {
+      const elapsed = daysBetween(taskStart, progD);
+      const pct = Math.max(0, Math.min(100, elapsed / totalDays * 100));
+      if (pct > 0) {
+        const overlay = document.createElement('div');
+        overlay.style.cssText = `position:absolute;top:0;left:0;width:${pct}%;height:100%;background:rgba(0,0,0,0.15);border-radius:${pct >= 100 ? '4px' : '4px 0 0 4px'};pointer-events:none;`;
+        el.appendChild(overlay);
+      }
+    }
+  }
+
   if (appMode === 'edit') {
     const lHandle = document.createElement('div');
     lHandle.className = 'resize-handle left';
@@ -1630,6 +1652,12 @@ function getThunderLaneBoundaryY(p) {
   const extraBottom = hasBelow ? labelExtra : 0;
   const laneH = (rh - extraTop - extraBottom) / numLanes;
   return rowYOffsets[vi] + extraTop + laneH * (p.lane + 1);
+}
+
+function getProgressDateForLane(ri, lane) {
+  if (!state.progressShading || !state.thunderLine.visible) return null;
+  const p = state.thunderLine.points.find(p => p.rowIndex === ri && (p.lane || 0) === lane);
+  return p ? p.date : (state.thunderLine.defaultDate || null);
 }
 
 function renderThunderLine() {
@@ -2080,6 +2108,11 @@ function toggleArrows(visible) {
 
 function toggleThunder(visible) {
   state.thunderLine.visible = visible;
+  render();
+}
+
+function toggleProgressShading(enabled) {
+  state.progressShading = enabled;
   render();
 }
 
@@ -2581,12 +2614,14 @@ function applyJSONData(data) {
   }
   if (!state.fontSize) state.fontSize = 14;
   if (state.cornerLabel === undefined) state.cornerLabel = '';
+  if (state.progressShading === undefined) state.progressShading = false;
   if (state.lang) { currentLang = state.lang; } else { state.lang = currentLang; }
   document.getElementById('sel-lang').value = currentLang;
   updateUIText();
   document.getElementById('sel-unit').value = state.timeUnit || 'month';
   document.getElementById('chk-arrows').checked = state.arrowsVisible !== false;
   document.getElementById('chk-thunder').checked = state.thunderLine.visible;
+  document.getElementById('chk-progress-shading').checked = state.progressShading;
   document.getElementById('thunder-default-date').value = state.thunderLine.defaultDate;
   if (state.sidebarWidth) {
     document.documentElement.style.setProperty('--sidebar-width', state.sidebarWidth + 'px');
@@ -2840,6 +2875,27 @@ function renderToCanvas() {
         ctx.shadowColor = 'transparent';
         ctx.shadowBlur = 0;
         ctx.shadowOffsetY = 0;
+
+        // Progress shading
+        const cProgressDate = getProgressDateForLane(entry.originalIndex, laneIdx);
+        if (cProgressDate) {
+          const cTaskStart = parseDate(item.startDate), cTaskEnd = parseDate(item.endDate);
+          const cProgD = parseDate(cProgressDate);
+          const cTotalDays = daysBetween(cTaskStart, cTaskEnd);
+          if (cTotalDays > 0) {
+            const cElapsed = daysBetween(cTaskStart, cProgD);
+            const cPct = Math.max(0, Math.min(1, cElapsed / cTotalDays));
+            if (cPct > 0) {
+              const shadingW = w * cPct;
+              ctx.save();
+              roundRect(ctx, x1, barY, w, bh, 4);
+              ctx.clip();
+              ctx.fillStyle = 'rgba(0,0,0,0.15)';
+              ctx.fillRect(x1, barY, shadingW, bh);
+              ctx.restore();
+            }
+          }
+        }
 
         if (item.label) {
           const tlp = item.taskLabelPosition || 'inside';
