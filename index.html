@@ -625,6 +625,47 @@ let state = {
 let appMode = 'edit'; // edit | view
 let viewRange = null; // {start, end}
 let selectedItems = []; // [{rowIndex, itemIndex}]
+
+// ===== Undo Stack =====
+const undoStack = [];
+const MAX_UNDO = 50;
+
+function pushUndo(action) {
+  if (undoStack.length >= MAX_UNDO) undoStack.shift();
+  undoStack.push(action);
+}
+
+function undo() {
+  if (undoStack.length === 0) return;
+  const action = undoStack.pop();
+  switch (action.type) {
+    case 'moveItems':
+      action.items.forEach(a => {
+        const item = state.rows[a.rowIndex].items[a.itemIndex];
+        if (a.startDate !== undefined) item.startDate = a.startDate;
+        if (a.endDate !== undefined) item.endDate = a.endDate;
+        if (a.date !== undefined) item.date = a.date;
+      });
+      break;
+    case 'resizeItem': {
+      const item = state.rows[action.rowIndex].items[action.itemIndex];
+      item.startDate = action.startDate;
+      item.endDate = action.endDate;
+      break;
+    }
+    case 'addArrow':
+      state.arrows.splice(action.arrowIndex, 1);
+      break;
+    case 'moveThunderDot':
+      if (action.wasNew) {
+        state.thunderLine.points.splice(action.pointIndex, 1);
+      } else {
+        state.thunderLine.points[action.pointIndex].date = action.oldDate;
+      }
+      break;
+  }
+  render();
+}
 let columns = [];
 let colWidth = 80;
 let customColWidth = null; // user-set column width via drag resize
@@ -1431,6 +1472,7 @@ function startArrowDrag(e, ri, ii, edge) {
       // Don't allow self-arrows
       if (target.rowIndex !== ri || target.itemIndex !== ii) {
         state.arrows.push({ from: fromRef, to: target });
+        pushUndo({ type: 'addArrow', arrowIndex: state.arrows.length - 1 });
         render();
       }
     }
@@ -1640,6 +1682,8 @@ function startThunderDotDrag(e, rowIndex, lane, isExplicit, explicitIndex) {
   const scrollRect = bodyScroll.getBoundingClientRect();
   let pointIndex = explicitIndex;
   let moved = false;
+  const wasNew = !isExplicit;
+  const oldDate = isExplicit ? state.thunderLine.points[explicitIndex].date : null;
 
   // If dragging a default (non-explicit) dot, create an explicit point on first move
   function ensureExplicit() {
@@ -1665,7 +1709,10 @@ function startThunderDotDrag(e, rowIndex, lane, isExplicit, explicitIndex) {
     document.removeEventListener('mousemove', onMove);
     document.removeEventListener('mouseup', onUp);
     hideDragTooltip();
-    if (moved) render();
+    if (moved) {
+      pushUndo({ type: 'moveThunderDot', pointIndex, wasNew, oldDate });
+      render();
+    }
   }
 
   document.addEventListener('mousemove', onMove);
@@ -1830,7 +1877,13 @@ function onItemMouseDown(e, ri, ii) {
     document.removeEventListener('mousemove', onMove);
     document.removeEventListener('mouseup', onUp);
     hideDragTooltip();
-    if (moved) render();
+    if (moved) {
+      pushUndo({ type: 'moveItems', items: selectedItems.map((s, i) => {
+        const orig = originals[i];
+        return { rowIndex: s.rowIndex, itemIndex: s.itemIndex, ...orig };
+      })});
+      render();
+    }
   }
 
   document.addEventListener('mousemove', onMove);
@@ -1846,7 +1899,10 @@ function startResize(e, ri, ii, side) {
   const scrollRect = bodyScroll.getBoundingClientRect();
   const origStart = item.startDate, origEnd = item.endDate;
 
+  let resizeMoved = false;
+
   function onMove(ev) {
+    resizeMoved = true;
     const mx = ev.clientX - scrollRect.left + bodyScroll.scrollLeft;
     if (side === 'left') {
       const curDate = getDateForX(mx, columns, colWidth);
@@ -1867,6 +1923,9 @@ function startResize(e, ri, ii, side) {
     document.removeEventListener('mousemove', onMove);
     document.removeEventListener('mouseup', onUp);
     hideDragTooltip();
+    if (resizeMoved) {
+      pushUndo({ type: 'resizeItem', rowIndex: ri, itemIndex: ii, startDate: origStart, endDate: origEnd });
+    }
     render();
   }
 
@@ -2968,6 +3027,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Keyboard
 document.addEventListener('keydown', e => {
+  if (e.key === 'z' && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
+    if (!document.querySelector('.modal-overlay') && document.activeElement.tagName !== 'INPUT' && !document.activeElement.isContentEditable) {
+      e.preventDefault();
+      undo();
+    }
+  }
   if (e.key === 'Delete' || e.key === 'Backspace') {
     if (appMode === 'edit' && selectedItems.length > 0 && !document.querySelector('.modal-overlay') && document.activeElement.tagName !== 'INPUT' && !document.activeElement.isContentEditable) {
       e.preventDefault();
