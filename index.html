@@ -165,6 +165,14 @@ body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; font-size
 .sidebar-row.drag-over-above { box-shadow: inset 0 3px 0 0 var(--accent); }
 .sidebar-row.drag-over-below { box-shadow: inset 0 -3px 0 0 var(--accent); }
 .sidebar-row.dragging { opacity: 0.4; }
+.sidebar-collapse-btn {
+  cursor: pointer; font-size: 10px; flex-shrink: 0; width: 16px; height: 16px;
+  text-align: center; user-select: none; color: #888; line-height: 16px;
+  border: 1px solid #ccc; border-radius: 2px; background: #f5f5f5;
+}
+.sidebar-collapse-btn:hover { color: #333; background: #ddd; }
+.sidebar-row.row-collapsed { overflow: hidden; min-height: 0 !important; height: 20px !important; max-height: 20px !important; }
+.sidebar-row.row-collapsed .sidebar-name { opacity: 0.5; font-size: 0.85em; }
 
 #gantt-body-scroll {
   grid-row: 2; grid-column: 2;
@@ -488,6 +496,8 @@ const I18N = {
     rowMemo: 'Memo',
     noColor: 'None (default)',
     progressShading: 'Progress Shading',
+    collapseRow: 'Collapse row',
+    expandRow: 'Expand row',
   },
   ja: {
     title: '\u30AC\u30F3\u30C8\u30C1\u30E3\u30FC\u30C8',
@@ -563,6 +573,8 @@ const I18N = {
     rowMemo: '\u30E1\u30E2',
     noColor: '\u306A\u3057\uFF08\u30C7\u30D5\u30A9\u30EB\u30C8\uFF09',
     progressShading: '\u9032\u6357\u8868\u793A',
+    collapseRow: '\u884C\u3092\u6298\u308A\u305F\u305F\u3080',
+    expandRow: '\u884C\u3092\u5C55\u958B\u3059\u308B',
   }
 };
 
@@ -824,12 +836,20 @@ let rowHeights = []; // per visible row
 let rowYOffsets = []; // cumulative Y for each visible row
 let totalBodyHeight = 0;
 
+const COLLAPSED_ROW_HEIGHT = 20;
+
 function computeRowLayout() {
   const labelExtra = Math.ceil(state.fontSize * 0.8) + 4;
   rowHeights = [];
   rowYOffsets = [];
   let y = 0;
   visibleRows.forEach((entry, vi) => {
+    if (entry.row.collapsed) {
+      rowHeights.push(COLLAPSED_ROW_HEIGHT);
+      rowYOffsets.push(y);
+      y += COLLAPSED_ROW_HEIGHT;
+      return;
+    }
     let hasAbove = false, hasBelow = false;
     entry.row.items.forEach(item => {
       if (item.type === 'task') {
@@ -897,7 +917,7 @@ function getVisibleRows() {
   }
   return state.rows
     .map((r, i) => ({ row: r, originalIndex: i }))
-    .filter(entry => entry.row.visible !== false);
+    .filter(entry => entry.row.visible !== false && !entry.row.collapsed);
 }
 
 let visibleRows = [];
@@ -929,11 +949,17 @@ function measureSidebarRowHeights() {
   const sidebarRows = sb.querySelectorAll('.sidebar-row');
   let y = 0;
   sidebarRows.forEach((el, i) => {
-    const naturalH = el.offsetHeight;
-    if (naturalH > rowHeights[i]) {
-      rowHeights[i] = naturalH;
+    if (visibleRows[i] && visibleRows[i].row.collapsed) {
+      // Keep collapsed rows at fixed height, don't let content expand them
+      el.style.height = COLLAPSED_ROW_HEIGHT + 'px';
+      rowHeights[i] = COLLAPSED_ROW_HEIGHT;
+    } else {
+      const naturalH = el.offsetHeight;
+      if (naturalH > rowHeights[i]) {
+        rowHeights[i] = naturalH;
+      }
+      el.style.height = rowHeights[i] + 'px';
     }
-    el.style.height = rowHeights[i] + 'px';
     rowYOffsets[i] = y;
     y += rowHeights[i];
   });
@@ -949,9 +975,13 @@ function applyCustomBodyHeight() {
   const sb = document.getElementById('gantt-sidebar');
   const sidebarRows = sb.querySelectorAll('.sidebar-row');
 
-  // Apply scaled heights to sidebar rows
+  // Apply scaled heights to sidebar rows (keep collapsed rows fixed)
   for (let i = 0; i < rowHeights.length; i++) {
-    rowHeights[i] = Math.round(rowHeights[i] * scale);
+    if (visibleRows[i] && visibleRows[i].row.collapsed) {
+      rowHeights[i] = COLLAPSED_ROW_HEIGHT;
+    } else {
+      rowHeights[i] = Math.round(rowHeights[i] * scale);
+    }
     if (sidebarRows[i]) sidebarRows[i].style.height = rowHeights[i] + 'px';
   }
 
@@ -959,7 +989,9 @@ function applyCustomBodyHeight() {
   // Use the actual rendered height as the floor
   let y = 0;
   for (let i = 0; i < rowHeights.length; i++) {
-    if (sidebarRows[i]) {
+    if (visibleRows[i] && visibleRows[i].row.collapsed) {
+      rowHeights[i] = COLLAPSED_ROW_HEIGHT;
+    } else if (sidebarRows[i]) {
       const actual = sidebarRows[i].offsetHeight;
       if (actual > rowHeights[i]) {
         rowHeights[i] = actual;
@@ -981,7 +1013,7 @@ function renderSidebar() {
       // In edit mode visibleRows = all rows, so vi === ri
       const div = document.createElement('div');
       div.className = 'sidebar-row';
-      div.style.minHeight = rowHeights[ri] + 'px';
+      if (!row.collapsed) div.style.minHeight = rowHeights[ri] + 'px';
       div.dataset.rowIndex = ri;
       if (row.color) div.style.background = row.color;
 
@@ -1002,7 +1034,23 @@ function renderSidebar() {
       handle.addEventListener('mousedown', e => startRowDrag(e, ri));
       div.appendChild(handle);
 
+      const collapseBtn = document.createElement('span');
+      collapseBtn.className = 'sidebar-collapse-btn';
+      collapseBtn.textContent = row.collapsed ? '▶' : '▼';
+      collapseBtn.title = row.collapsed ? t('expandRow') : t('collapseRow');
+      collapseBtn.onclick = () => {
+        state.rows[ri].collapsed = !state.rows[ri].collapsed;
+        render();
+      };
+      div.appendChild(collapseBtn);
+
       if (row.visible === false) div.classList.add('row-hidden');
+      if (row.collapsed) {
+        div.classList.add('row-collapsed');
+        div.style.height = COLLAPSED_ROW_HEIGHT + 'px';
+        div.style.maxHeight = COLLAPSED_ROW_HEIGHT + 'px';
+        div.style.minHeight = '';
+      }
 
       const nameEl = document.createElement('span');
       nameEl.className = 'sidebar-name';
@@ -1186,6 +1234,7 @@ function renderBody() {
 
   // Lane separator lines
   visibleRows.forEach((entry, vi) => {
+    if (entry.row.collapsed) return;
     const numLanes = entry.row.lanes || 1;
     if (numLanes <= 1) return;
     const rh = rowHeights[vi];
@@ -1219,6 +1268,7 @@ function renderItems() {
   const bh = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--bar-height'));
 
   visibleRows.forEach((entry, vi) => {
+    if (entry.row.collapsed) return; // skip collapsed rows
     const ri = entry.originalIndex;
     const rh = rowHeights[vi];
     const ry = rowYOffsets[vi];
@@ -2598,6 +2648,7 @@ function applyJSONData(data) {
       if (row.lanes === undefined) row.lanes = 1;
       if (row.color === undefined) row.color = null;
       if (row.memo === undefined) row.memo = '';
+      if (row.collapsed === undefined) row.collapsed = false;
       row.items.forEach(item => {
         if (item.lane === undefined) item.lane = 0;
       });
