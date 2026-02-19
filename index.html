@@ -2640,7 +2640,7 @@ function applyJSONData(data) {
   if (!state.thunderLine) state.thunderLine = { visible: true, points: [], defaultDate: fmtDate(new Date()) };
   if (!state.arrows) state.arrows = [];
   if (state.arrowsVisible === undefined) state.arrowsVisible = true;
-  if (!state.thunderLine.defaultDate) state.thunderLine.defaultDate = fmtDate(new Date());
+  state.thunderLine.defaultDate = fmtDate(new Date()); // always reset to today on load
   if (state.thunderLine.points) {
     state.thunderLine.points.forEach(p => {
       if (p.lane === undefined) p.lane = 0;
