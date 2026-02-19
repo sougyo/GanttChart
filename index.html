@@ -1047,6 +1047,7 @@ function renderSidebar() {
       nameEl.addEventListener('keydown', e => {
         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); nameEl.blur(); }
       });
+      if (row.memo) nameEl.title = row.memo;
       div.appendChild(nameEl);
 
       const btns = document.createElement('div');
@@ -1086,6 +1087,7 @@ function renderSidebar() {
       nameEl.className = 'sidebar-name';
       nameEl.textContent = entry.row.name;
       nameEl.contentEditable = false;
+      if (entry.row.memo) nameEl.title = entry.row.memo;
       div.appendChild(nameEl);
       sb.appendChild(div);
     });
@@ -3066,6 +3068,7 @@ function roundRect(ctx, x, y, w, h, r) {
 }
 
 // ===== Toast =====
+
 function showToast(msg) {
   const toast = document.getElementById('toast');
   toast.textContent = msg;
