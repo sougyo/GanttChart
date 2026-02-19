@@ -368,12 +368,15 @@ body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; font-size
     <input type="date" id="thunder-default-date" onchange="changeThunderDefault(this.value)">
     <button id="btn-reset-progress" onclick="resetProgressPoints()"></button>
   </div>
-  <div class="toolbar-group" id="view-controls" style="display:none;">
+  <div class="toolbar-group" id="range-controls">
+    <div class="toolbar-sep"></div>
     <label id="lbl-range"></label>
     <input type="date" id="view-start" onchange="applyViewRange()">
     <span>~</span>
     <input type="date" id="view-end" onchange="applyViewRange()">
     <button id="btn-all-range" onclick="clearViewRange()"></button>
+  </div>
+  <div class="toolbar-group" id="view-controls" style="display:none;">
     <div class="toolbar-sep"></div>
     <button id="btn-copy-image" onclick="copyAsImage()"></button>
   </div>
@@ -2440,10 +2443,6 @@ function setMode(mode) {
 
   if (mode === 'view') {
     clearSelection();
-    if (!viewRange) {
-      document.getElementById('view-start').value = state.startDate;
-      document.getElementById('view-end').value = state.endDate;
-    }
   }
   render();
 }
@@ -2668,6 +2667,9 @@ function applyJSONData(data) {
   if (viewRange) {
     document.getElementById('view-start').value = viewRange.start;
     document.getElementById('view-end').value = viewRange.end;
+  } else {
+    document.getElementById('view-start').value = state.startDate;
+    document.getElementById('view-end').value = state.endDate;
   }
   selectedItems = [];
   render();
@@ -3176,6 +3178,8 @@ function initBodyHeightResizeHandle() {
 document.addEventListener('DOMContentLoaded', () => {
   document.body.classList.add('edit-mode');
   document.getElementById('thunder-default-date').value = state.thunderLine.defaultDate;
+  document.getElementById('view-start').value = state.startDate;
+  document.getElementById('view-end').value = state.endDate;
   updateUIText();
   initResizeHandle();
   initSidebarResizeHandle();
