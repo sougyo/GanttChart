@@ -1271,6 +1271,11 @@ function renderItems() {
 }
 
 function renderTask(layer, item, ri, ii, rh, bh, ry) {
+  if (columns.length > 0) {
+    const rangeStart = columns[0].start;
+    const rangeEnd = columns[columns.length - 1].end;
+    if (parseDate(item.endDate) < rangeStart || parseDate(item.startDate) > rangeEnd) return;
+  }
   const x1 = getXForDate(item.startDate, columns, colWidth);
   const x2 = getXForDateEnd(item.endDate, columns, colWidth);
   if (x2 < 0 || x1 > columns.length * colWidth) return;
@@ -1363,6 +1368,12 @@ function renderTask(layer, item, ri, ii, rh, bh, ry) {
 }
 
 function renderMilestone(layer, item, ri, ii, rh, ry) {
+  if (columns.length > 0) {
+    const rangeStart = columns[0].start;
+    const rangeEnd = columns[columns.length - 1].end;
+    const msDate = parseDate(item.date);
+    if (msDate < rangeStart || msDate > rangeEnd) return;
+  }
   const x = getXForDateCenter(item.date, columns, colWidth);
   if (x < 0 || x > columns.length * colWidth) return;
   const row = state.rows[ri];
@@ -1427,6 +1438,15 @@ function renderMilestone(layer, item, ri, ii, rh, ry) {
 }
 
 // ===== Arrow (Dependency) Rendering =====
+function isItemInDateRange(item, rangeStart, rangeEnd) {
+  if (item.type === 'task') {
+    return parseDate(item.endDate) >= rangeStart && parseDate(item.startDate) <= rangeEnd;
+  } else {
+    const d = parseDate(item.date);
+    return d >= rangeStart && d <= rangeEnd;
+  }
+}
+
 function getArrowAnchorPos(ref) {
   const bh = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--bar-height'));
   // Find visible row index for this originalIndex
@@ -1481,6 +1501,21 @@ function renderArrows() {
   if (!state.arrows || state.arrows.length === 0) return;
 
   state.arrows.forEach((arrow, ai) => {
+    const fromRow = state.rows[arrow.from.rowIndex];
+    const toRow = state.rows[arrow.to.rowIndex];
+    if (!fromRow || !toRow) return;
+    // Skip arrows where either endpoint is in a collapsed row
+    if (fromRow.collapsed || toRow.collapsed) return;
+    // Skip arrows where either endpoint's item is outside the visible range
+    if (columns.length > 0) {
+      const rangeStart = columns[0].start;
+      const rangeEnd = columns[columns.length - 1].end;
+      const fromItem = fromRow.items[arrow.from.itemIndex];
+      const toItem = toRow.items[arrow.to.itemIndex];
+      if (!fromItem || !toItem) return;
+      if (!isItemInDateRange(fromItem, rangeStart, rangeEnd)) return;
+      if (!isItemInDateRange(toItem, rangeStart, rangeEnd)) return;
+    }
     const fromPos = getArrowAnchorPos(arrow.from);
     const toPos = getArrowAnchorPos(arrow.to);
     if (!fromPos || !toPos) return;
