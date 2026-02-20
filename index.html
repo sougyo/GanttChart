@@ -1306,7 +1306,7 @@ function renderTask(layer, item, ri, ii, rh, bh, ry) {
     taskLabel.textContent = item.label || '';
     el.appendChild(taskLabel);
   }
-  el.title = `${item.label || ''}\n${item.startDate} 〜 ${item.endDate}${item.memo ? '\n' + item.memo : ''}`;
+  el.title = `${item.label || ''}\n${formatDateLabel(item.startDate)} 〜 ${formatDateLabel(item.endDate)}${item.memo ? '\n' + item.memo : ''}`;
 
   // Progress shading overlay
   const progressDate = getProgressDateForLane(ri, item.lane || 0);
@@ -1385,7 +1385,7 @@ function renderMilestone(layer, item, ri, ii, rh, ry) {
   el.className = 'gantt-item gantt-milestone';
   if (isSelected(ri, ii)) el.classList.add('selected');
   el.style.top = (top - 12) + 'px';
-  el.title = `${item.label || ''}\n${item.date}${item.memo ? '\n' + item.memo : ''}`;
+  el.title = `${item.label || ''}\n${formatDateLabel(item.date)}${item.memo ? '\n' + item.memo : ''}`;
 
   const pos = item.labelPosition || 'after';
   let lblEl;
@@ -1935,7 +1935,10 @@ function hideDragTooltip() {
 
 function formatDateLabel(d) {
   if (typeof d === 'string') d = parseDate(d);
-  return `${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()}`;
+  const dowEn = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const dowJa = ['日','月','火','水','木','金','土'];
+  const dow = currentLang === 'ja' ? dowJa[d.getDay()] : dowEn[d.getDay()];
+  return `${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()} (${dow})`;
 }
 
 // ===== Drag & Resize =====
