@@ -667,6 +667,7 @@ function undo() {
         if (a.startDate !== undefined) item.startDate = a.startDate;
         if (a.endDate !== undefined) item.endDate = a.endDate;
         if (a.date !== undefined) item.date = a.date;
+        if (a.lane !== undefined) item.lane = a.lane;
       });
       break;
     case 'resizeItem': {
@@ -1975,23 +1976,41 @@ function onItemMouseDown(e, ri, ii) {
   const scrollRect = bodyScroll.getBoundingClientRect();
   const startBodyX = e.clientX - scrollRect.left + bodyScroll.scrollLeft;
 
-  // Record original dates
+  // Record original dates and lanes
   const originals = selectedItems.map(s => {
     const item = state.rows[s.rowIndex].items[s.itemIndex];
-    if (item.type === 'task') return { startDate: item.startDate, endDate: item.endDate };
-    return { date: item.date };
+    if (item.type === 'task') return { startDate: item.startDate, endDate: item.endDate, lane: item.lane || 0 };
+    return { date: item.date, lane: item.lane || 0 };
   });
+
+  // Primary item's visible row index and original lane (for lane-delta calculation)
+  const primaryVi = visibleRows.findIndex(entry => entry.originalIndex === ri);
+  const primaryOrigLane = originals[0] ? originals[0].lane : 0;
 
   let moved = false;
 
   function onMove(ev) {
     const dx = ev.clientX - e.clientX;
-    if (Math.abs(dx) < 3 && !moved) return;
+    const dy = ev.clientY - e.clientY;
+    if (Math.abs(dx) < 3 && Math.abs(dy) < 3 && !moved) return;
     moved = true;
     const curBodyX = ev.clientX - scrollRect.left + bodyScroll.scrollLeft;
     const startDate = getDateForX(startBodyX, columns, colWidth);
     const curDate = getDateForX(curBodyX, columns, colWidth);
     const dayOffset = daysBetween(startDate, curDate);
+
+    // Detect lane change: compare mouse Y position within the primary item's row
+    let laneDelta = 0;
+    if (primaryVi >= 0) {
+      const curBodyY = ev.clientY - scrollRect.top + bodyScroll.scrollTop;
+      const hoverVi = getVisibleRowIndexForY(curBodyY);
+      if (hoverVi === primaryVi) {
+        const row = visibleRows[primaryVi].row;
+        const yWithinRow = curBodyY - rowYOffsets[primaryVi];
+        const newLane = getLaneForY(row, yWithinRow, rowHeights[primaryVi]);
+        laneDelta = newLane - primaryOrigLane;
+      }
+    }
 
     selectedItems.forEach((s, i) => {
       const item = state.rows[s.rowIndex].items[s.itemIndex];
@@ -2002,15 +2021,22 @@ function onItemMouseDown(e, ri, ii) {
       } else {
         item.date = fmtDate(addDays(parseDate(orig.date), dayOffset));
       }
+      // Update lane within the row's valid range
+      const numLanes = state.rows[s.rowIndex].lanes || 1;
+      item.lane = Math.max(0, Math.min(numLanes - 1, orig.lane + laneDelta));
     });
 
-    // Show tooltip with current date(s)
+    // Show tooltip with current date(s) and lane if multi-lane row
     const first = state.rows[selectedItems[0].rowIndex].items[selectedItems[0].itemIndex];
+    const firstRow = state.rows[selectedItems[0].rowIndex];
+    let tip;
     if (first.type === 'task') {
-      showDragTooltip(ev, `${formatDateLabel(first.startDate)} 〜 ${formatDateLabel(first.endDate)}`);
+      tip = `${formatDateLabel(first.startDate)} 〜 ${formatDateLabel(first.endDate)}`;
     } else {
-      showDragTooltip(ev, formatDateLabel(first.date));
+      tip = formatDateLabel(first.date);
     }
+    if ((firstRow.lanes || 1) > 1) tip += ` [${t('lane')} ${(first.lane || 0) + 1}]`;
+    showDragTooltip(ev, tip);
 
     renderItems();
     renderThunderLine();
