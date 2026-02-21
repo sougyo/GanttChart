@@ -438,6 +438,7 @@ body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; font-size
   <div class="toolbar-group">
     <button id="btn-export" onclick="exportJSON()"></button>
     <button id="btn-import" onclick="importJSON()"></button>
+    <button id="btn-autosave" onclick="toggleAutoSave()"></button>
   </div>
   <div class="toolbar-sep"></div>
   <div class="toolbar-group">
@@ -561,6 +562,10 @@ const I18N = {
     addHoliday: 'Add',
     noHolidays: 'No holidays registered.',
     businessDays: 'business days',
+    autoSave: 'Auto Save',
+    autoSaveDisableConfirm: 'Disable auto save?',
+    autoSaveNotSupported: 'Auto save is not supported in this browser.',
+    autoSaved: 'Auto saved',
   },
   ja: {
     title: '\u30AC\u30F3\u30C8\u30C1\u30E3\u30FC\u30C8',
@@ -644,6 +649,10 @@ const I18N = {
     addHoliday: '\u8FFD\u52A0',
     noHolidays: '\u795D\u65E5\u304C\u767B\u9332\u3055\u308C\u3066\u3044\u307E\u305B\u3093\u3002',
     businessDays: '\u71DF\u696D\u65E5',
+    autoSave: '\u81EA\u52D5\u4FDD\u5B58',
+    autoSaveDisableConfirm: '\u81EA\u52D5\u4FDD\u5B58\u3092\u7121\u52B9\u306B\u3057\u307E\u3059\u304B\uFF1F',
+    autoSaveNotSupported: '\u3053\u306E\u30D6\u30E9\u30A6\u30B6\u3067\u306F\u81EA\u52D5\u4FDD\u5B58\u306F\u30B5\u30DD\u30FC\u30C8\u3055\u308C\u3066\u3044\u307E\u305B\u3093\u3002',
+    autoSaved: '\u81EA\u52D5\u4FDD\u5B58\u3057\u307E\u3057\u305F',
   }
 };
 
@@ -677,6 +686,7 @@ function updateUIText() {
   document.getElementById('btn-all-range').textContent = t('allRange');
   document.getElementById('btn-copy-image').textContent = t('copyImage');
   document.getElementById('btn-holidays').textContent = t('holidays');
+  updateAutoSaveButton();
   document.getElementById('btn-export').textContent = t('export');
   document.getElementById('btn-import').textContent = t('import');
   const corner = document.getElementById('gantt-corner');
@@ -915,6 +925,7 @@ function render() {
   renderArrows();
   renderThunderLine();
   isRendering = false;
+  scheduleAutoSave();
 }
 
 const BASE_ROW_HEIGHT = 44;
@@ -2989,6 +3000,135 @@ function clearViewRange() {
   render();
 }
 
+// ===== Auto Save =====
+let autoSaveHandle = null;
+let autoSaveTimer = null;
+
+function openAutoSaveDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('gantt-autosave', 1);
+    req.onupgradeneeded = e => e.target.result.createObjectStore('handles');
+    req.onsuccess = e => resolve(e.target.result);
+    req.onerror = e => reject(e.target.error);
+  });
+}
+async function storeAutoSaveHandle(handle) {
+  const db = await openAutoSaveDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('handles', 'readwrite');
+    tx.objectStore('handles').put(handle, 'autoSave');
+    tx.oncomplete = resolve;
+    tx.onerror = e => reject(e.target.error);
+  });
+}
+async function loadAutoSaveHandleFromDB() {
+  const db = await openAutoSaveDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('handles', 'readonly');
+    const req = tx.objectStore('handles').get('autoSave');
+    req.onsuccess = e => resolve(e.target.result || null);
+    req.onerror = e => reject(e.target.error);
+  });
+}
+async function clearAutoSaveHandleFromDB() {
+  const db = await openAutoSaveDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('handles', 'readwrite');
+    tx.objectStore('handles').delete('autoSave');
+    tx.oncomplete = resolve;
+    tx.onerror = e => reject(e.target.error);
+  });
+}
+
+function getStateJSON() {
+  state.sidebarWidth = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-width'));
+  state.colWidth = customColWidth;
+  state.bodyHeight = customBodyHeight;
+  state.viewRange = viewRange;
+  return JSON.stringify(state, null, 2);
+}
+
+async function doAutoSave() {
+  if (!autoSaveHandle) return;
+  try {
+    const writable = await autoSaveHandle.createWritable();
+    await writable.write(getStateJSON());
+    await writable.close();
+    showToast(t('autoSaved') + ': ' + autoSaveHandle.name);
+  } catch (err) {
+    if (err.name === 'NotAllowedError') {
+      // Permission revoked — try to request again on next user interaction
+    } else {
+      console.error('Auto save error:', err);
+    }
+  }
+}
+
+function scheduleAutoSave() {
+  if (!autoSaveHandle) return;
+  clearTimeout(autoSaveTimer);
+  autoSaveTimer = setTimeout(doAutoSave, 1500);
+}
+
+function updateAutoSaveButton() {
+  const btn = document.getElementById('btn-autosave');
+  if (!btn) return;
+  if (autoSaveHandle) {
+    btn.textContent = '● ' + autoSaveHandle.name;
+    btn.style.color = '#2e7d32';
+    btn.style.fontWeight = 'bold';
+  } else {
+    btn.textContent = t('autoSave');
+    btn.style.color = '';
+    btn.style.fontWeight = '';
+  }
+}
+
+async function toggleAutoSave() {
+  if (!window.showSaveFilePicker) {
+    alert(t('autoSaveNotSupported'));
+    return;
+  }
+  if (autoSaveHandle) {
+    if (!confirm(t('autoSaveDisableConfirm'))) return;
+    autoSaveHandle = null;
+    clearTimeout(autoSaveTimer);
+    await clearAutoSaveHandleFromDB();
+    updateAutoSaveButton();
+    return;
+  }
+  try {
+    const handle = await window.showSaveFilePicker({
+      suggestedName: 'gantt-chart.json',
+      types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }]
+    });
+    autoSaveHandle = handle;
+    await storeAutoSaveHandle(handle);
+    updateAutoSaveButton();
+    await doAutoSave();
+  } catch (e) {
+    if (e.name !== 'AbortError') console.error(e);
+  }
+}
+
+async function restoreAutoSaveHandle() {
+  if (!window.showSaveFilePicker) return;
+  try {
+    const handle = await loadAutoSaveHandleFromDB();
+    if (!handle) return;
+    // Check if permission is already granted (no user gesture needed for query)
+    const perm = await handle.queryPermission({ mode: 'readwrite' });
+    autoSaveHandle = handle; // restore regardless; write will request permission if needed
+    updateAutoSaveButton();
+    if (perm !== 'granted') {
+      // Permission will be re-requested on next write attempt (requires user gesture)
+      // Update button to show it's set but may need re-auth
+    }
+  } catch (e) {
+    // Handle may be stale or API unavailable
+  }
+}
+
 // ===== Export / Import =====
 function exportJSON() {
   state.sidebarWidth = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-width'));
@@ -3605,6 +3745,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   render();
+  restoreAutoSaveHandle();
 
   // File drag & drop import
   document.addEventListener('dragover', e => { e.preventDefault(); });
