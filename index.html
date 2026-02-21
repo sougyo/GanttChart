@@ -560,6 +560,7 @@ const I18N = {
     holidayName: 'Holiday name',
     addHoliday: 'Add',
     noHolidays: 'No holidays registered.',
+    businessDays: 'business days',
   },
   ja: {
     title: '\u30AC\u30F3\u30C8\u30C1\u30E3\u30FC\u30C8',
@@ -642,6 +643,7 @@ const I18N = {
     holidayName: '\u795D\u65E5\u540D',
     addHoliday: '\u8FFD\u52A0',
     noHolidays: '\u795D\u65E5\u304C\u767B\u9332\u3055\u308C\u3066\u3044\u307E\u305B\u3093\u3002',
+    businessDays: '\u71DF\u696D\u65E5',
   }
 };
 
@@ -776,6 +778,18 @@ function parseDate(s) { const p = s.split('-'); return new Date(+p[0], +p[1]-1, 
 function fmtDate(d) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 function addDays(d, n) { const r = new Date(d); r.setDate(r.getDate()+n); return r; }
 function daysBetween(a, b) { return Math.round((b.getTime()-a.getTime())/86400000); }
+function calcBusinessDays(startDateStr, endDateStr) {
+  const holidaySet = new Set((state.holidays || []).map(h => h.date));
+  let cur = parseDate(startDateStr);
+  const end = parseDate(endDateStr);
+  let count = 0;
+  while (cur <= end) {
+    const dow = cur.getDay();
+    if (dow !== 0 && dow !== 6 && !holidaySet.has(fmtDate(cur))) count++;
+    cur = addDays(cur, 1);
+  }
+  return count;
+}
 function monthStart(d) { return new Date(d.getFullYear(), d.getMonth(), 1); }
 function monthEnd(d) { return new Date(d.getFullYear(), d.getMonth()+1, 0); }
 function weekStart(d) { const r = new Date(d); const day = r.getDay(); r.setDate(r.getDate() - (day === 0 ? 6 : day - 1)); return r; }
@@ -1384,7 +1398,8 @@ function renderTask(layer, item, ri, ii, rh, bh, ry) {
     taskLabel.textContent = item.label || '';
     el.appendChild(taskLabel);
   }
-  el.title = `${item.label || ''}\n${formatDateLabel(item.startDate)} 〜 ${formatDateLabel(item.endDate)}${item.memo ? '\n' + item.memo : ''}`;
+  const bizDays = calcBusinessDays(item.startDate, item.endDate);
+  el.title = `${item.label || ''}\n${formatDateLabel(item.startDate)} 〜 ${formatDateLabel(item.endDate)}  (${bizDays} ${t('businessDays')})${item.memo ? '\n' + item.memo : ''}`;
 
   // Progress shading overlay
   // Use pixel-based calculation so clipped tasks (outside range) render correctly.
