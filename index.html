@@ -3054,7 +3054,12 @@ async function doAutoSave() {
     const writable = await autoSaveHandle.createWritable();
     await writable.write(getStateJSON());
     await writable.close();
-    showToast(t('autoSaved') + ': ' + autoSaveHandle.name);
+    const btn = document.getElementById('btn-autosave');
+    if (btn) {
+      btn.textContent = '✓ ' + autoSaveHandle.name;
+      clearTimeout(btn._revertTimer);
+      btn._revertTimer = setTimeout(() => updateAutoSaveButton(), 1500);
+    }
   } catch (err) {
     if (err.name === 'NotAllowedError') {
       // Permission revoked — try to request again on next user interaction
