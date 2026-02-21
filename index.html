@@ -1353,19 +1353,16 @@ function renderTask(layer, item, ri, ii, rh, bh, ry) {
   el.title = `${item.label || ''}\n${formatDateLabel(item.startDate)} 〜 ${formatDateLabel(item.endDate)}${item.memo ? '\n' + item.memo : ''}`;
 
   // Progress shading overlay
+  // Use pixel-based calculation so clipped tasks (outside range) render correctly.
   const progressDate = getProgressDateForLane(ri, item.lane || 0);
-  if (progressDate) {
-    const taskStart = parseDate(item.startDate), taskEnd = parseDate(item.endDate);
-    const progD = parseDate(progressDate);
-    const totalDays = daysBetween(taskStart, taskEnd);
-    if (totalDays > 0) {
-      const elapsed = daysBetween(taskStart, progD);
-      const pct = Math.max(0, Math.min(100, elapsed / totalDays * 100));
-      if (pct > 0) {
-        const overlay = document.createElement('div');
-        overlay.style.cssText = `position:absolute;top:0;left:0;width:${pct}%;height:100%;background:rgba(0,0,0,0.15);border-radius:${pct >= 100 ? '4px' : '4px 0 0 4px'};pointer-events:none;`;
-        el.appendChild(overlay);
-      }
+  if (progressDate && columns.length > 0) {
+    const progX = getXForDate(progressDate, columns, colWidth);
+    const shadingW = Math.max(0, Math.min(w, progX - x1));
+    if (shadingW > 0) {
+      const overlay = document.createElement('div');
+      const fullWidth = shadingW >= w;
+      overlay.style.cssText = `position:absolute;top:0;left:0;width:${shadingW / w * 100}%;height:100%;background:rgba(0,0,0,0.15);border-radius:${fullWidth ? '4px' : '4px 0 0 4px'};pointer-events:none;`;
+      el.appendChild(overlay);
     }
   }
 
