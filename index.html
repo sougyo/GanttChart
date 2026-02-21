@@ -1392,7 +1392,7 @@ function renderMilestone(layer, item, ri, ii, rh, ry) {
     const msDate = parseDate(item.date);
     if (msDate < rangeStart || msDate > rangeEnd) return;
   }
-  const x = getXForDateCenter(item.date, columns, colWidth);
+  const x = getXForDateEnd(item.date, columns, colWidth);
   if (x < 0 || x > columns.length * colWidth) return;
   const row = state.rows[ri];
   const laneIdx = item.lane || 0;
@@ -1425,8 +1425,15 @@ function renderMilestone(layer, item, ri, ii, rh, ry) {
     el.appendChild(lblEl);
   }
 
-  // Position: center the mark on x
-  el.style.left = (x - 8) + 'px';
+  // x = right edge of date column (= arrow endpoint)
+  // 'after' ([▽][label]): offset so ▽ right edge lands just before x (inside the day)
+  // 'before' ([label][▽]): right-align element near x so ▽ right edge lands near x
+  if (pos === 'before') {
+    el.style.left = (x + 8) + 'px';
+    el.style.transform = 'translateX(-100%)';
+  } else {
+    el.style.left = (x - 20) + 'px';
+  }
 
   if (appMode === 'edit') {
     // Arrow anchor for milestone
@@ -1670,7 +1677,7 @@ function findAnchorAtPos(mx, my, excludeRi, excludeIi) {
         d = Math.hypot(mx - rightX, my - cy);
         if (d < bestDist) { bestDist = d; best = { rowIndex: ri, itemIndex: ii, edge: 'right' }; }
       } else if (item.type === 'milestone') {
-        const cx = getXForDateCenter(item.date, columns, colWidth);
+        const cx = getXForDateEnd(item.date, columns, colWidth);
         const cy = ry + laneCenter;
         const d = Math.hypot(mx - cx, my - cy);
         if (d < bestDist) { bestDist = d; best = { rowIndex: ri, itemIndex: ii, edge: 'center' }; }
@@ -3157,7 +3164,7 @@ function renderToCanvas() {
           }
         }
       } else if (item.type === 'milestone') {
-        const x = sw + getXForDateCenter(item.date, columns, colWidth);
+        const x = sw + getXForDateEnd(item.date, columns, colWidth);
         const msLaneIdx = item.lane || 0;
         const msLaneCenter = getLaneCenterY(row, msLaneIdx, rh);
         const my = y + msLaneCenter;
