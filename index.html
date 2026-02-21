@@ -1411,6 +1411,15 @@ function renderTask(layer, item, ri, ii, rh, bh, ry) {
   layer.appendChild(el);
 }
 
+// Measure ▽ mark half-width via canvas for precise DOM positioning.
+// .gantt-milestone: font-size 0.8em, .milestone-mark: font-size 1.3em → combined 0.8×1.3 of body.
+const _msMarkCtx = document.createElement('canvas').getContext('2d');
+function getMilestoneMarkHalfWidth(shape) {
+  const fontPx = (state.fontSize || 14) * 0.8 * 1.3;
+  _msMarkCtx.font = `${fontPx}px sans-serif`;
+  return _msMarkCtx.measureText(shape).width / 2;
+}
+
 function renderMilestone(layer, item, ri, ii, rh, ry) {
   if (columns.length > 0) {
     const rangeStart = columns[0].start;
@@ -1451,14 +1460,17 @@ function renderMilestone(layer, item, ri, ii, rh, ry) {
     el.appendChild(lblEl);
   }
 
-  // x = right edge of date column (= arrow endpoint)
-  // 'after' ([▽][label]): offset so ▽ right edge lands just before x (inside the day)
-  // 'before' ([label][▽]): right-align element near x so ▽ right edge lands near x
+  // x = getXForDateEnd = arrow anchor X
+  // Position ▽ center exactly at x:
+  //   after  ([▽][label]): left = x - padding_left - markHalfWidth
+  //   before ([label][▽]): left = x + padding_right + markHalfWidth + translateX(-100%)
+  const msPad = 3; // .gantt-milestone padding-left/right
+  const msHalf = getMilestoneMarkHalfWidth(item.milestoneShape || '▽');
   if (pos === 'before') {
-    el.style.left = (x + 8) + 'px';
+    el.style.left = (x + msPad + msHalf) + 'px';
     el.style.transform = 'translateX(-100%)';
   } else {
-    el.style.left = (x - 20) + 'px';
+    el.style.left = (x - msPad - msHalf) + 'px';
   }
 
   if (appMode === 'edit') {
