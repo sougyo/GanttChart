@@ -401,6 +401,7 @@ body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; font-size
     <label id="lbl-font"></label>
     <button onclick="changeFontSize(-1)">A-</button>
     <button onclick="changeFontSize(1)">A+</button>
+    <button id="btn-fit-width" onclick="fitToScreen()"></button>
   </div>
   <div class="toolbar-sep"></div>
   <div class="toolbar-group" id="edit-controls">
@@ -563,6 +564,7 @@ const I18N = {
     addHoliday: 'Add',
     noHolidays: 'No holidays registered.',
     businessDays: 'business days',
+    fitToScreen: 'Fit Width',
     autoSave: 'Auto Save',
     autoSaveDisableConfirm: 'Disable auto save?',
     autoSaveNotSupported: 'Auto save is not supported in this browser.',
@@ -650,6 +652,7 @@ const I18N = {
     addHoliday: '\u8FFD\u52A0',
     noHolidays: '\u795D\u65E5\u304C\u767B\u9332\u3055\u308C\u3066\u3044\u307E\u305B\u3093\u3002',
     businessDays: '\u71DF\u696D\u65E5',
+    fitToScreen: '\u5E45\u3092\u5408\u308F\u305B\u308B',
     autoSave: '\u81EA\u52D5\u4FDD\u5B58',
     autoSaveDisableConfirm: '\u81EA\u52D5\u4FDD\u5B58\u3092\u7121\u52B9\u306B\u3057\u307E\u3059\u304B\uFF1F',
     autoSaveNotSupported: '\u3053\u306E\u30D6\u30E9\u30A6\u30B6\u3067\u306F\u81EA\u52D5\u4FDD\u5B58\u306F\u30B5\u30DD\u30FC\u30C8\u3055\u308C\u3066\u3044\u307E\u305B\u3093\u3002',
@@ -673,6 +676,7 @@ function updateUIText() {
   document.getElementById('opt-week').textContent = t('week');
   document.getElementById('opt-day').textContent = t('day');
   document.getElementById('lbl-font').textContent = t('font');
+  document.getElementById('btn-fit-width').textContent = t('fitToScreen');
   document.getElementById('btn-add-col-start').textContent = t('addColStart');
   document.getElementById('btn-add-col-end').textContent = t('addColEnd');
   document.getElementById('btn-rm-col-start').textContent = t('rmColStart');
@@ -2864,6 +2868,16 @@ function changeUnit(unit) {
 function changeFontSize(delta) {
   state.fontSize = Math.max(8, Math.min(24, state.fontSize + delta));
   document.documentElement.style.setProperty('--font-size', state.fontSize + 'px');
+  render();
+}
+
+// ===== Fit Column Width to Screen =====
+function fitToScreen() {
+  if (columns.length === 0) return;
+  const bodyScroll = document.getElementById('gantt-body-scroll');
+  const avail = bodyScroll.clientWidth;
+  if (avail <= 0) return;
+  customColWidth = Math.max(20, Math.floor(avail / columns.length));
   render();
 }
 
