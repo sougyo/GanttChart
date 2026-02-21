@@ -188,6 +188,27 @@ body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; font-size
   overflow-x: auto;
   overflow-y: hidden;
   position: relative;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+#gantt-body-scroll::-webkit-scrollbar { display: none; }
+
+#top-scrollbar-outer {
+  display: flex;
+  margin: 12px 12px 0;
+}
+#top-scrollbar-spacer {
+  flex-shrink: 0;
+  width: calc(1px + var(--sidebar-width));
+}
+#top-scrollbar-scroll {
+  flex: 1;
+  overflow-x: auto;
+  overflow-y: hidden;
+  height: 14px;
+}
+#top-scrollbar-inner {
+  height: 1px;
 }
 #gantt-body {
   position: relative;
@@ -409,6 +430,10 @@ body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; font-size
   </div>
 </div>
 
+<div id="top-scrollbar-outer">
+  <div id="top-scrollbar-spacer"></div>
+  <div id="top-scrollbar-scroll"><div id="top-scrollbar-inner"></div></div>
+</div>
 <div id="gantt-wrapper">
   <div id="sidebar-resize-handle"></div>
   <div id="body-height-resize-handle"></div>
@@ -1214,6 +1239,7 @@ function renderBody() {
   const body = document.getElementById('gantt-body');
   body.style.width = totalW + 'px';
   body.style.height = totalBodyHeight + 'px';
+  document.getElementById('top-scrollbar-inner').style.width = totalW + 'px';
 
   // Position resize handle at right edge of last column
   const resizeHandle = document.getElementById('gantt-resize-handle');
@@ -2235,13 +2261,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Sync scroll
   const headerScroll = document.getElementById('gantt-header-scroll');
+  const topScroll = document.getElementById('top-scrollbar-scroll');
   bodyScroll.addEventListener('scroll', () => {
     headerScroll.scrollLeft = bodyScroll.scrollLeft;
+    topScroll.scrollLeft = bodyScroll.scrollLeft;
     document.getElementById('gantt-sidebar-scroll').scrollTop = bodyScroll.scrollTop;
   });
   // Also sync if header is scrolled directly (e.g. trackpad)
   headerScroll.addEventListener('scroll', () => {
     bodyScroll.scrollLeft = headerScroll.scrollLeft;
+  });
+  // Sync from top scrollbar
+  topScroll.addEventListener('scroll', () => {
+    bodyScroll.scrollLeft = topScroll.scrollLeft;
   });
 
   // ===== Header drag-to-select range =====
