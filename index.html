@@ -1465,6 +1465,16 @@ function isItemInDateRange(item, rangeStart, rangeEnd) {
   }
 }
 
+function getArrowEndpointDate(ref) {
+  const row = state.rows[ref.rowIndex];
+  if (!row) return null;
+  const item = row.items[ref.itemIndex];
+  if (!item) return null;
+  if (item.type === 'task') return ref.edge === 'right' ? item.endDate : item.startDate;
+  if (item.type === 'milestone') return item.date;
+  return null;
+}
+
 function getArrowAnchorPos(ref) {
   const bh = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--bar-height'));
   // Find visible row index for this originalIndex
@@ -1486,13 +1496,14 @@ function getArrowAnchorPos(ref) {
       return { x: getXForDateEnd(item.endDate, columns, colWidth), y };
     }
   } else if (item.type === 'milestone') {
-    return { x: getXForDateCenter(item.date, columns, colWidth), y: ry + laneCenter };
+    return { x: getXForDateEnd(item.date, columns, colWidth), y: ry + laneCenter };
   }
   return null;
 }
 
 function renderArrows() {
   const svg = document.getElementById('arrow-svg');
+  const bh = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--bar-height'));
   const totalW = columns.length * colWidth;
   svg.setAttribute('width', totalW);
   svg.setAttribute('height', totalBodyHeight);
@@ -1537,6 +1548,24 @@ function renderArrows() {
     const fromPos = getArrowAnchorPos(arrow.from);
     const toPos = getArrowAnchorPos(arrow.to);
     if (!fromPos || !toPos) return;
+
+    // Align X when both endpoints fall on the same date (prevents diagonal arrows)
+    const fromDate = getArrowEndpointDate(arrow.from);
+    const toDate = getArrowEndpointDate(arrow.to);
+    if (fromDate && toDate && fromDate === toDate) {
+      toPos.x = fromPos.x;
+    }
+
+    // Offset milestone arrow endpoint vertically so it doesn't overlap the symbol/label
+    const toItemForArrow = toRow.items[arrow.to.itemIndex];
+    if (toItemForArrow && toItemForArrow.type === 'milestone' && fromPos.y !== toPos.y) {
+      const offset = bh / 2;
+      if (fromPos.y < toPos.y) {
+        toPos.y -= offset; // arrow going down → endpoint above milestone center
+      } else {
+        toPos.y += offset; // arrow going up → endpoint below milestone center
+      }
+    }
 
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     const d = buildArrowPath(fromPos, toPos);
