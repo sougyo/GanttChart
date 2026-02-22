@@ -888,6 +888,7 @@ function getDateForX(x, cols, cw) {
 
 // ===== Rendering =====
 let isRendering = false;
+let isDirty = false;
 function render() {
   if (isRendering) return;
   isRendering = true;
@@ -930,6 +931,7 @@ function render() {
   renderArrows();
   renderThunderLine();
   isRendering = false;
+  isDirty = true;
   scheduleAutoSave();
 }
 
@@ -3069,6 +3071,7 @@ async function doAutoSave() {
     const writable = await autoSaveHandle.createWritable();
     await writable.write(getStateJSON());
     await writable.close();
+    isDirty = false;
     const btn = document.getElementById('btn-autosave');
     if (btn) {
       btn.textContent = '✓ ' + autoSaveHandle.name;
@@ -3171,6 +3174,7 @@ function exportJSON() {
   a.download = 'gantt-chart-' + ts + '.json';
   a.click();
   URL.revokeObjectURL(url);
+  isDirty = false;
   showToast(t('exported'));
 }
 
@@ -3228,6 +3232,7 @@ function applyJSONData(data) {
   }
   selectedItems = [];
   render();
+  isDirty = false;
   return true;
 }
 
@@ -3765,6 +3770,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   render();
+  isDirty = false;
   restoreAutoSaveHandle();
 
   // File drag & drop import
@@ -3776,6 +3782,14 @@ document.addEventListener('DOMContentLoaded', () => {
       loadJSONFile(file);
     }
   });
+});
+
+// Unsaved changes warning
+window.addEventListener('beforeunload', e => {
+  if (isDirty) {
+    e.preventDefault();
+    e.returnValue = '';
+  }
 });
 
 // Keyboard
