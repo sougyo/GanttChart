@@ -3074,7 +3074,7 @@ async function doAutoSave() {
     isDirty = false;
     const btn = document.getElementById('btn-autosave');
     if (btn) {
-      btn.textContent = '✓ ' + autoSaveHandle.name;
+      btn.style.color = '#43a047';
       clearTimeout(btn._revertTimer);
       btn._revertTimer = setTimeout(() => updateAutoSaveButton(), 1500);
     }
@@ -3100,10 +3100,12 @@ function updateAutoSaveButton() {
     btn.textContent = '● ' + autoSaveHandle.name;
     btn.style.color = '#2e7d32';
     btn.style.fontWeight = 'bold';
+    btn.title = autoSaveHandle.name;
   } else {
     btn.textContent = t('autoSave');
     btn.style.color = '';
     btn.style.fontWeight = '';
+    btn.title = '';
   }
 }
 
