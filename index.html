@@ -986,18 +986,22 @@ function computeRowLayout() {
 
 function getLaneCenterY(row, laneIndex, rh) {
   const { heights, extraTop } = getLaneHeights(row);
+  const naturalTotal = heights.reduce((a, b) => a + b, 0);
+  const scale = (rh && naturalTotal > 0) ? rh / naturalTotal : 1;
   let laneStartY = 0;
-  for (let i = 0; i < laneIndex; i++) laneStartY += heights[i];
-  return laneStartY + extraTop[laneIndex] + BASE_ROW_HEIGHT / 2;
+  for (let i = 0; i < laneIndex; i++) laneStartY += heights[i] * scale;
+  return laneStartY + extraTop[laneIndex] * scale + (BASE_ROW_HEIGHT * scale) / 2;
 }
 
 function getLaneForY(row, yWithinRow, rh) {
   const numLanes = row.lanes || 1;
   if (numLanes <= 1) return 0;
   const { heights } = getLaneHeights(row);
+  const naturalTotal = heights.reduce((a, b) => a + b, 0);
+  const scale = (rh && naturalTotal > 0) ? rh / naturalTotal : 1;
   let cumY = 0;
   for (let i = 0; i < numLanes; i++) {
-    cumY += heights[i];
+    cumY += heights[i] * scale;
     if (yWithinRow < cumY) return i;
   }
   return numLanes - 1;
@@ -1332,10 +1336,13 @@ function renderBody() {
     const numLanes = entry.row.lanes || 1;
     if (numLanes <= 1) return;
     const ry = rowYOffsets[vi];
+    const rh = rowHeights[vi];
     const { heights } = getLaneHeights(entry.row);
+    const naturalTotal = heights.reduce((a, b) => a + b, 0);
+    const scale = naturalTotal > 0 ? rh / naturalTotal : 1;
     let cumY = 0;
     for (let li = 1; li < numLanes; li++) {
-      cumY += heights[li - 1];
+      cumY += heights[li - 1] * scale;
       const sepY = ry + cumY;
       const sep = document.createElement('div');
       sep.className = 'lane-separator';
@@ -1855,9 +1862,12 @@ function getThunderLaneBoundaryY(p) {
   // Bottom edge of this lane within the row
   const vi = p.displayIndex;
   const row = visibleRows[vi].row;
+  const rh = rowHeights[vi];
   const { heights } = getLaneHeights(row);
+  const naturalTotal = heights.reduce((a, b) => a + b, 0);
+  const scale = naturalTotal > 0 ? rh / naturalTotal : 1;
   let laneEndY = rowYOffsets[vi];
-  for (let i = 0; i <= p.lane; i++) laneEndY += heights[i];
+  for (let i = 0; i <= p.lane; i++) laneEndY += heights[i] * scale;
   return laneEndY;
 }
 
@@ -1894,7 +1904,8 @@ function renderThunderLine() {
     pathParts.push(`${defX},${0}`);
     for (let i = 0; i < coords.length; i++) {
       pathParts.push(`${coords[i].x},${coords[i].y}`);
-      pathParts.push(`${defX},${coords[i].boundaryY}`);
+      const boundaryY = (i === coords.length - 1) ? totalBodyHeight : coords[i].boundaryY;
+      pathParts.push(`${defX},${boundaryY}`);
     }
 
     const polyline = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
