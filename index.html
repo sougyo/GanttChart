@@ -2293,7 +2293,8 @@ document.addEventListener('DOMContentLoaded', () => {
       { label: t('addLane'), action: () => { addLane(ri); } },
     ];
     if ((clickedRow.lanes || 1) >= 2) {
-      menuItems.push({ label: t('removeLane'), action: () => { removeLane(ri); } });
+      const lastLaneNum = clickedRow.lanes || 1;
+      menuItems.push({ label: `${t('removeLane')} (${t('lane')} ${lastLaneNum})`, action: () => { removeLane(ri); } });
     }
     menuItems.push({ sep: true });
     menuItems.push({ label: t('addProgress'), action: () => { addThunderPoint(ri, clickedLane, clickDateStr); } });
