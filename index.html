@@ -432,6 +432,7 @@ body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; font-size
   <div class="toolbar-group" id="view-controls" style="display:none;">
     <div class="toolbar-sep"></div>
     <button id="btn-copy-image" onclick="copyAsImage()"></button>
+    <button id="btn-download-svg" onclick="downloadSVG()"></button>
   </div>
   <div class="toolbar-sep"></div>
   <div class="toolbar-group">
@@ -566,6 +567,8 @@ const I18N = {
     addHoliday: 'Add',
     noHolidays: 'No holidays registered.',
     businessDays: 'business days',
+    downloadSVG: 'Download SVG',
+    svgDownloaded: 'SVG downloaded',
     fitToScreen: 'Fit Width',
     autoSave: 'Auto Save',
     autoSaveDisableConfirm: 'Disable auto save?',
@@ -654,6 +657,8 @@ const I18N = {
     holidayName: '\u795D\u65E5\u540D',
     addHoliday: '\u8FFD\u52A0',
     noHolidays: '\u795D\u65E5\u304C\u767B\u9332\u3055\u308C\u3066\u3044\u307E\u305B\u3093\u3002',
+    downloadSVG: 'SVG\u51FA\u529B',
+    svgDownloaded: 'SVG\u3092\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u3057\u307E\u3057\u305F',
     businessDays: '\u71DF\u696D\u65E5',
     fitToScreen: '\u5E45\u3092\u5408\u308F\u305B\u308B',
     autoSave: '\u81EA\u52D5\u4FDD\u5B58',
@@ -694,6 +699,7 @@ function updateUIText() {
   document.getElementById('lbl-range').textContent = t('range');
   document.getElementById('btn-all-range').textContent = t('allRange');
   document.getElementById('btn-copy-image').textContent = t('copyImage');
+  document.getElementById('btn-download-svg').textContent = t('downloadSVG');
   document.getElementById('btn-holidays').textContent = t('holidays');
   updateAutoSaveButton();
   document.getElementById('btn-export').textContent = t('export');
@@ -3668,6 +3674,319 @@ function renderToCanvas() {
   }
 
   return canvas;
+}
+
+function renderToSVG() {
+  const bh = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--bar-height'));
+  const sw = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-width'));
+  const hh = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--header-height'));
+  const fs = state.fontSize;
+
+  computeRowLayout();
+
+  const totalW = columns.length * colWidth + sw;
+  const totalH = totalBodyHeight + hh;
+
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('xmlns', NS);
+  svg.setAttribute('width', totalW);
+  svg.setAttribute('height', totalH);
+  svg.setAttribute('viewBox', `0 0 ${totalW} ${totalH}`);
+
+  // Helper: create SVG element with attributes
+  const mk = (tag, attrs, parent) => {
+    const el = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+    if (parent) parent.appendChild(el);
+    return el;
+  };
+
+  // Lazy <defs> getter
+  let defsEl = null;
+  const getDefs = () => {
+    if (!defsEl) { defsEl = mk('defs', {}, null); svg.insertBefore(defsEl, svg.firstChild); }
+    return defsEl;
+  };
+
+  // Text measurement (reuse a temporary canvas)
+  const _mCanvas = document.createElement('canvas');
+  const _mCtx = _mCanvas.getContext('2d');
+  const measure = (text, font) => { _mCtx.font = font; return _mCtx.measureText(text).width; };
+
+  // ===== Backgrounds =====
+  mk('rect', { x: 0, y: 0, width: totalW, height: totalH, fill: '#fff' }, svg);
+  mk('rect', { x: 0, y: 0, width: totalW, height: hh, fill: '#f0f4f8' }, svg);
+
+  if (state.timeUnit === 'day') {
+    columns.forEach((col, i) => {
+      if (col.weekend || col.holiday) {
+        mk('rect', { x: sw + i * colWidth, y: 0, width: colWidth, height: totalH, fill: '#fff3e0' }, svg);
+      }
+    });
+  } else if (state.showHolidayOverlay) {
+    getHolidaySpans().forEach(span => {
+      const x1 = sw + getXForDate(span.start, columns, colWidth);
+      const x2 = sw + getXForDateEnd(span.end, columns, colWidth);
+      if (x2 <= x1) return;
+      mk('rect', { x: x1, y: hh, width: x2 - x1, height: totalBodyHeight, fill: '#fff3e0' }, svg);
+      mk('rect', { x: x1, y: 0, width: x2 - x1, height: hh, fill: 'rgba(255,224,178,0.55)' }, svg);
+    });
+  }
+
+  visibleRows.forEach((entry, vi) => {
+    const rh = rowHeights[vi];
+    const ry = hh + rowYOffsets[vi];
+    if (entry.row.color) {
+      mk('rect', { x: 0, y: ry, width: totalW, height: rh, fill: entry.row.color }, svg);
+    } else {
+      mk('rect', { x: 0, y: ry, width: sw, height: rh, fill: vi % 2 === 0 ? '#fafbfc' : '#fff' }, svg);
+    }
+  });
+
+  // ===== Grid lines =====
+  let prevYear = null;
+  columns.forEach((col, i) => {
+    const x = sw + i * colWidth;
+    mk('line', { x1: x + colWidth, y1: hh, x2: x + colWidth, y2: totalH, stroke: '#e8e8e8', 'stroke-width': 1 }, svg);
+    mk('line', { x1: x + colWidth, y1: 0, x2: x + colWidth, y2: hh, stroke: '#d0d0d0', 'stroke-width': 1 }, svg);
+    if (col.year !== prevYear && i > 0) {
+      mk('line', { x1: x, y1: 0, x2: x, y2: totalH, stroke: '#bbb', 'stroke-width': 2 }, svg);
+    }
+    prevYear = col.year;
+  });
+
+  visibleRows.forEach((entry, vi) => {
+    const ry = hh + rowYOffsets[vi];
+    mk('line', { x1: 0, y1: ry + rowHeights[vi], x2: totalW, y2: ry + rowHeights[vi], stroke: '#d0d0d0', 'stroke-width': 1 }, svg);
+  });
+
+  mk('line', { x1: 0, y1: hh, x2: totalW, y2: hh, stroke: '#bbb', 'stroke-width': 2 }, svg);
+  mk('line', { x1: sw, y1: 0, x2: sw, y2: totalH, stroke: '#bbb', 'stroke-width': 2 }, svg);
+
+  // ===== Header text =====
+  const cornerEl = mk('text', { x: 8, y: hh / 2, 'dominant-baseline': 'middle', 'font-family': 'sans-serif', 'font-size': fs * 0.85, 'font-weight': 'bold', fill: '#666' }, svg);
+  cornerEl.textContent = state.cornerLabel || t('taskName');
+
+  prevYear = null;
+  columns.forEach((col, i) => {
+    const x = sw + i * colWidth;
+    let lbl = col.label;
+    if (col.year !== prevYear) {
+      if (state.timeUnit === 'month') lbl = col.year + '/' + lbl;
+      prevYear = col.year;
+    }
+    const el = mk('text', { x: x + 4, y: hh / 2 + 4, 'dominant-baseline': 'middle', 'font-family': 'sans-serif', 'font-size': fs * 0.85, 'font-weight': '600', fill: '#555' }, svg);
+    el.textContent = lbl;
+  });
+
+  // ===== Rows =====
+  visibleRows.forEach((entry, vi) => {
+    const row = entry.row;
+    const rh = rowHeights[vi];
+    const ry = hh + rowYOffsets[vi];
+
+    // Row name with text wrapping
+    const rowFont = `${fs}px sans-serif`;
+    const maxTextW = sw - 16;
+    const lineH = fs * 1.3;
+    const lines = [];
+    row.name.split('\n').forEach(para => {
+      let cur = '';
+      for (const ch of para) {
+        const test = cur + ch;
+        if (measure(test, rowFont) > maxTextW && cur) { lines.push(cur); cur = ch; }
+        else cur = test;
+      }
+      lines.push(cur);
+    });
+    const totalTextH = lines.length * lineH;
+    const textStartY = ry + (rh - totalTextH) / 2;
+    const nameEl = mk('text', { 'font-family': 'sans-serif', 'font-size': fs, fill: '#333' }, svg);
+    lines.forEach((line, li) => {
+      const ts = document.createElementNS(NS, 'tspan');
+      ts.setAttribute('x', '8');
+      ts.setAttribute('y', textStartY + li * lineH + fs);
+      ts.textContent = line;
+      nameEl.appendChild(ts);
+    });
+
+    // Lane separators
+    const numLanes = row.lanes || 1;
+    if (numLanes > 1) {
+      const { heights } = getLaneHeights(row);
+      const naturalTotal = heights.reduce((a, b) => a + b, 0);
+      const scale = naturalTotal > 0 ? rh / naturalTotal : 1;
+      let cumY = 0;
+      for (let li = 1; li < numLanes; li++) {
+        cumY += heights[li - 1] * scale;
+        mk('line', { x1: sw, y1: ry + cumY, x2: totalW, y2: ry + cumY, stroke: '#ccc', 'stroke-width': 1, 'stroke-dasharray': '4,3' }, svg);
+      }
+    }
+
+    // Items
+    row.items.forEach((item, ii) => {
+      if (item.type === 'task') {
+        const x1 = sw + getXForDate(item.startDate, columns, colWidth);
+        const x2 = sw + getXForDateEnd(item.endDate, columns, colWidth);
+        const w = Math.max(x2 - x1, 4);
+        const laneIdx = item.lane || 0;
+        const laneCenter = getLaneCenterY(row, laneIdx, rh);
+        const barY = ry + laneCenter - bh / 2;
+        const color = item.color || COLORS[0];
+        const clipId = `tc-${vi}-${ii}`;
+
+        // Clip path for the task bar (used for inside label clipping)
+        const cp = document.createElementNS(NS, 'clipPath');
+        cp.setAttribute('id', clipId);
+        mk('rect', { x: x1, y: barY, width: w, height: bh, rx: 4, ry: 4 }, cp);
+        getDefs().appendChild(cp);
+
+        mk('rect', { x: x1, y: barY, width: w, height: bh, rx: 4, ry: 4, fill: color }, svg);
+
+        // Progress shading
+        const progressDate = getProgressDateForLane(entry.originalIndex, laneIdx);
+        if (progressDate) {
+          const totalDays = daysBetween(parseDate(item.startDate), parseDate(item.endDate));
+          if (totalDays > 0) {
+            const elapsed = daysBetween(parseDate(item.startDate), parseDate(progressDate));
+            const pct = Math.max(0, Math.min(1, elapsed / totalDays));
+            if (pct > 0) {
+              mk('rect', { x: x1, y: barY, width: w * pct, height: bh, fill: 'rgba(0,0,0,0.15)', 'clip-path': `url(#${clipId})` }, svg);
+            }
+          }
+        }
+
+        // Label
+        if (item.label) {
+          const tlp = item.taskLabelPosition || 'inside';
+          const labelFont = `${fs * 0.8}px sans-serif`;
+          const labelEl = mk('text', { 'font-family': 'sans-serif', 'font-size': fs * 0.8, fill: tlp === 'inside' ? '#fff' : '#333' }, svg);
+          if (tlp === 'inside') {
+            labelEl.setAttribute('x', x1 + w / 2);
+            labelEl.setAttribute('y', barY + bh / 2);
+            labelEl.setAttribute('text-anchor', 'middle');
+            labelEl.setAttribute('dominant-baseline', 'middle');
+            labelEl.setAttribute('clip-path', `url(#${clipId})`);
+          } else if (tlp === 'above') {
+            labelEl.setAttribute('x', x1);
+            labelEl.setAttribute('y', barY - 4);
+            labelEl.setAttribute('dominant-baseline', 'alphabetic');
+          } else if (tlp === 'below') {
+            labelEl.setAttribute('x', x1);
+            labelEl.setAttribute('y', barY + bh + 4);
+            labelEl.setAttribute('dominant-baseline', 'hanging');
+          } else if (tlp === 'left') {
+            const tw = measure(item.label, labelFont);
+            labelEl.setAttribute('x', x1 - tw - 4);
+            labelEl.setAttribute('y', barY + bh / 2);
+            labelEl.setAttribute('dominant-baseline', 'middle');
+          } else if (tlp === 'right') {
+            labelEl.setAttribute('x', x1 + w + 4);
+            labelEl.setAttribute('y', barY + bh / 2);
+            labelEl.setAttribute('dominant-baseline', 'middle');
+          }
+          labelEl.textContent = item.label;
+        }
+
+      } else if (item.type === 'milestone') {
+        const x = sw + getXForDateEnd(item.date, columns, colWidth);
+        const msLaneCenter = getLaneCenterY(row, item.lane || 0, rh);
+        const my = ry + msLaneCenter;
+        const msChar = item.milestoneShape || '▽';
+        const msColor = item.milestoneColor || '#d32f2f';
+        const msFont = `${fs * 1.3}px sans-serif`;
+        const msW = measure(msChar, msFont);
+        const msEl = mk('text', { x, y: my, 'font-family': 'sans-serif', 'font-size': fs * 1.3, fill: msColor, 'text-anchor': 'middle', 'dominant-baseline': 'middle' }, svg);
+        msEl.textContent = msChar;
+
+        if (item.label) {
+          const lblFont = `${fs * 0.8}px sans-serif`;
+          const lw = measure(item.label, lblFont);
+          const lblEl = mk('text', { 'font-family': 'sans-serif', 'font-size': fs * 0.8, fill: '#333', 'dominant-baseline': 'middle' }, svg);
+          if (item.labelPosition === 'before') {
+            lblEl.setAttribute('x', x - msW / 2 - lw - 4);
+          } else {
+            lblEl.setAttribute('x', x + msW / 2 + 4);
+          }
+          lblEl.setAttribute('y', my);
+          lblEl.textContent = item.label;
+        }
+      }
+    });
+  });
+
+  // ===== Arrows =====
+  if (state.arrowsVisible !== false && state.arrows && state.arrows.length > 0) {
+    const marker = document.createElementNS(NS, 'marker');
+    marker.setAttribute('id', 'svg-arrowhead');
+    marker.setAttribute('markerWidth', '8'); marker.setAttribute('markerHeight', '6');
+    marker.setAttribute('refX', '8'); marker.setAttribute('refY', '3');
+    marker.setAttribute('orient', 'auto');
+    const arrowShape = document.createElementNS(NS, 'polygon');
+    arrowShape.setAttribute('points', '0 0, 8 3, 0 6');
+    arrowShape.setAttribute('fill', '#666');
+    marker.appendChild(arrowShape);
+    getDefs().appendChild(marker);
+
+    state.arrows.forEach(arrow => {
+      const fp = getArrowAnchorPos(arrow.from);
+      const tp = getArrowAnchorPos(arrow.to);
+      if (!fp || !tp) return;
+      mk('line', {
+        x1: sw + fp.x, y1: hh + fp.y,
+        x2: sw + tp.x, y2: hh + tp.y,
+        stroke: '#666', 'stroke-width': 1.5, 'marker-end': 'url(#svg-arrowhead)'
+      }, svg);
+    });
+  }
+
+  // ===== Thunder (progress) line =====
+  if (state.thunderLine.visible && visibleRows.length > 0) {
+    const pts = getThunderPointsForRender();
+    const coords = pts.map(p => ({
+      x: sw + getXForDateCenter(p.date, columns, colWidth),
+      y: hh + getThunderPointY(p),
+      boundaryY: hh + getThunderLaneBoundaryY(p),
+      explicit: p.explicit
+    }));
+
+    if (coords.length > 0) {
+      const defX = sw + getXForDateCenter(state.thunderLine.defaultDate || fmtDate(new Date()), columns, colWidth);
+      const pts2 = [`${defX},${hh}`];
+      coords.forEach((c, i) => {
+        pts2.push(`${c.x},${c.y}`);
+        pts2.push(`${defX},${i === coords.length - 1 ? hh + totalBodyHeight : c.boundaryY}`);
+      });
+      mk('polyline', { points: pts2.join(' '), stroke: '#d32f2f', 'stroke-width': 2, fill: 'none' }, svg);
+    }
+    coords.forEach(c => {
+      mk('circle', { cx: c.x, cy: c.y, r: c.explicit ? 5 : 3, fill: '#d32f2f', opacity: c.explicit ? 1 : 0.5 }, svg);
+    });
+  }
+
+  return svg;
+}
+
+function downloadSVG() {
+  const svg = renderToSVG();
+  const svgStr = new XMLSerializer().serializeToString(svg);
+  const blob = new Blob([svgStr], { type: 'image/svg+xml' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const now = new Date();
+  const ts = now.getFullYear()
+    + String(now.getMonth() + 1).padStart(2, '0')
+    + String(now.getDate()).padStart(2, '0')
+    + '-'
+    + String(now.getHours()).padStart(2, '0')
+    + String(now.getMinutes()).padStart(2, '0')
+    + String(now.getSeconds()).padStart(2, '0');
+  a.download = 'gantt-chart-' + ts + '.svg';
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast(t('svgDownloaded'));
 }
 
 function roundRect(ctx, x, y, w, h, r) {
