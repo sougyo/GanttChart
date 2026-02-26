@@ -942,8 +942,29 @@ let totalBodyHeight = 0;
 
 const COLLAPSED_ROW_HEIGHT = 20;
 
-function computeRowLayout() {
+// Returns per-lane heights for a row, accounting for label-above/below per lane.
+// { heights: number[], extraTop: number[], extraBottom: number[] }
+function getLaneHeights(row) {
+  const numLanes = row.lanes || 1;
   const labelExtra = Math.ceil(state.fontSize * 0.8) + 4;
+  const extraTop = new Array(numLanes).fill(0);
+  const extraBottom = new Array(numLanes).fill(0);
+  row.items.forEach(item => {
+    if (item.type === 'task') {
+      const lane = Math.max(0, Math.min(numLanes - 1, item.lane || 0));
+      const pos = item.taskLabelPosition || 'inside';
+      if (pos === 'above') extraTop[lane] = labelExtra;
+      if (pos === 'below') extraBottom[lane] = labelExtra;
+    }
+  });
+  const heights = [];
+  for (let i = 0; i < numLanes; i++) {
+    heights.push(BASE_ROW_HEIGHT + extraTop[i] + extraBottom[i]);
+  }
+  return { heights, extraTop, extraBottom };
+}
+
+function computeRowLayout() {
   rowHeights = [];
   rowYOffsets = [];
   let y = 0;
@@ -954,16 +975,8 @@ function computeRowLayout() {
       y += COLLAPSED_ROW_HEIGHT;
       return;
     }
-    let hasAbove = false, hasBelow = false;
-    entry.row.items.forEach(item => {
-      if (item.type === 'task') {
-        const pos = item.taskLabelPosition || 'inside';
-        if (pos === 'above') hasAbove = true;
-        if (pos === 'below') hasBelow = true;
-      }
-    });
-    const numLanes = entry.row.lanes || 1;
-    const h = BASE_ROW_HEIGHT * numLanes + (hasAbove ? labelExtra : 0) + (hasBelow ? labelExtra : 0);
+    const { heights } = getLaneHeights(entry.row);
+    const h = heights.reduce((a, b) => a + b, 0);
     rowHeights.push(h);
     rowYOffsets.push(y);
     y += h;
@@ -972,39 +985,22 @@ function computeRowLayout() {
 }
 
 function getLaneCenterY(row, laneIndex, rh) {
-  const numLanes = row.lanes || 1;
-  const labelExtra = Math.ceil(state.fontSize * 0.8) + 4;
-  let hasAbove = false;
-  row.items.forEach(item => {
-    if (item.type === 'task' && (item.taskLabelPosition || 'inside') === 'above') hasAbove = true;
-  });
-  const extraTop = hasAbove ? labelExtra : 0;
-  let hasBelow = false;
-  row.items.forEach(item => {
-    if (item.type === 'task' && (item.taskLabelPosition || 'inside') === 'below') hasBelow = true;
-  });
-  const extraBottom = hasBelow ? labelExtra : 0;
-  const laneH = (rh - extraTop - extraBottom) / numLanes;
-  return extraTop + laneH * laneIndex + laneH / 2;
+  const { heights, extraTop } = getLaneHeights(row);
+  let laneStartY = 0;
+  for (let i = 0; i < laneIndex; i++) laneStartY += heights[i];
+  return laneStartY + extraTop[laneIndex] + BASE_ROW_HEIGHT / 2;
 }
 
 function getLaneForY(row, yWithinRow, rh) {
   const numLanes = row.lanes || 1;
   if (numLanes <= 1) return 0;
-  const labelExtra = Math.ceil(state.fontSize * 0.8) + 4;
-  let hasAbove = false;
-  row.items.forEach(item => {
-    if (item.type === 'task' && (item.taskLabelPosition || 'inside') === 'above') hasAbove = true;
-  });
-  const extraTop = hasAbove ? labelExtra : 0;
-  let hasBelow = false;
-  row.items.forEach(item => {
-    if (item.type === 'task' && (item.taskLabelPosition || 'inside') === 'below') hasBelow = true;
-  });
-  const extraBottom = hasBelow ? labelExtra : 0;
-  const laneH = (rh - extraTop - extraBottom) / numLanes;
-  const laneIndex = Math.floor((yWithinRow - extraTop) / laneH);
-  return Math.max(0, Math.min(numLanes - 1, laneIndex));
+  const { heights } = getLaneHeights(row);
+  let cumY = 0;
+  for (let i = 0; i < numLanes; i++) {
+    cumY += heights[i];
+    if (yWithinRow < cumY) return i;
+  }
+  return numLanes - 1;
 }
 
 function getVisibleRowIndexForY(y) {
@@ -1335,22 +1331,12 @@ function renderBody() {
     if (entry.row.collapsed) return;
     const numLanes = entry.row.lanes || 1;
     if (numLanes <= 1) return;
-    const rh = rowHeights[vi];
     const ry = rowYOffsets[vi];
-    const labelExtra = Math.ceil(state.fontSize * 0.8) + 4;
-    let hasAbove = false, hasBelow = false;
-    entry.row.items.forEach(item => {
-      if (item.type === 'task') {
-        const pos = item.taskLabelPosition || 'inside';
-        if (pos === 'above') hasAbove = true;
-        if (pos === 'below') hasBelow = true;
-      }
-    });
-    const extraTop = hasAbove ? labelExtra : 0;
-    const extraBottom = hasBelow ? labelExtra : 0;
-    const laneH = (rh - extraTop - extraBottom) / numLanes;
+    const { heights } = getLaneHeights(entry.row);
+    let cumY = 0;
     for (let li = 1; li < numLanes; li++) {
-      const sepY = ry + extraTop + laneH * li;
+      cumY += heights[li - 1];
+      const sepY = ry + cumY;
       const sep = document.createElement('div');
       sep.className = 'lane-separator';
       sep.style.top = sepY + 'px';
@@ -1869,18 +1855,10 @@ function getThunderLaneBoundaryY(p) {
   // Bottom edge of this lane within the row
   const vi = p.displayIndex;
   const row = visibleRows[vi].row;
-  const rh = rowHeights[vi];
-  const numLanes = row.lanes || 1;
-  const labelExtra = Math.ceil(state.fontSize * 0.8) + 4;
-  let hasAbove = false, hasBelow = false;
-  row.items.forEach(item => {
-    if (item.type === 'task' && (item.taskLabelPosition || 'inside') === 'above') hasAbove = true;
-    if (item.type === 'task' && (item.taskLabelPosition || 'inside') === 'below') hasBelow = true;
-  });
-  const extraTop = hasAbove ? labelExtra : 0;
-  const extraBottom = hasBelow ? labelExtra : 0;
-  const laneH = (rh - extraTop - extraBottom) / numLanes;
-  return rowYOffsets[vi] + extraTop + laneH * (p.lane + 1);
+  const { heights } = getLaneHeights(row);
+  let laneEndY = rowYOffsets[vi];
+  for (let i = 0; i <= p.lane; i++) laneEndY += heights[i];
+  return laneEndY;
 }
 
 function getProgressDateForLane(ri, lane) {
