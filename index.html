@@ -1030,6 +1030,19 @@ function renderHeader() {
   const hdr = document.getElementById('gantt-header');
   hdr.innerHTML = '';
   hdr.style.width = (columns.length * colWidth) + 'px';
+
+  // Week/month view: overlay holiday spans (semi-transparent so labels remain readable)
+  if (state.timeUnit !== 'day' && columns.length > 0) {
+    getHolidaySpans().forEach(span => {
+      const x1 = getXForDate(span.start, columns, colWidth);
+      const x2 = getXForDateEnd(span.end, columns, colWidth);
+      if (x2 <= x1) return;
+      const div = document.createElement('div');
+      div.style.cssText = `position:absolute;left:${x1}px;top:0;width:${x2-x1}px;height:100%;background:rgba(255,224,178,0.55);pointer-events:none;z-index:1`;
+      hdr.appendChild(div);
+    });
+  }
+
   let prevYear = null;
   columns.forEach((col, i) => {
     const cell = document.createElement('div');
@@ -1353,9 +1366,47 @@ function renderBody() {
   });
 }
 
+// Returns spans for registered holidays (non-weekend) within the current visible columns.
+// Adjacent holiday days are merged into a single span.
+function getHolidaySpans() {
+  if (!columns || columns.length === 0) return [];
+  const holidaySet = new Set((state.holidays || []).map(h => h.date));
+  const rangeEnd = columns[columns.length - 1].end;
+  const spans = [];
+  let spanStart = null;
+  let cur = new Date(columns[0].start);
+  while (cur <= rangeEnd) {
+    const dow = cur.getDay();
+    const isHoliday = holidaySet.has(fmtDate(cur)) && dow !== 0 && dow !== 6;
+    if (isHoliday) {
+      if (!spanStart) spanStart = new Date(cur);
+    } else {
+      if (spanStart) spans.push({ start: spanStart, end: addDays(cur, -1) });
+      spanStart = null;
+    }
+    cur = addDays(cur, 1);
+  }
+  if (spanStart) spans.push({ start: spanStart, end: new Date(rangeEnd) });
+  return spans;
+}
+
+// For week/month view: render light-orange overlay rectangles for holiday spans.
+function renderHolidayOverlays(layer) {
+  if (state.timeUnit === 'day') return;
+  getHolidaySpans().forEach(span => {
+    const x1 = getXForDate(span.start, columns, colWidth);
+    const x2 = getXForDateEnd(span.end, columns, colWidth);
+    if (x2 <= x1) return;
+    const div = document.createElement('div');
+    div.style.cssText = `position:absolute;left:${x1}px;top:0;width:${x2-x1}px;height:${totalBodyHeight}px;background:#fff3e0;pointer-events:none`;
+    layer.appendChild(div);
+  });
+}
+
 function renderItems() {
   const layer = document.getElementById('items-layer');
   layer.innerHTML = '';
+  renderHolidayOverlays(layer);
   const bh = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--bar-height'));
 
   visibleRows.forEach((entry, vi) => {
