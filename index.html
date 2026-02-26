@@ -416,6 +416,7 @@ body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; font-size
     <label><input type="checkbox" id="chk-arrows" checked onchange="toggleArrows(this.checked)"> <span id="lbl-arrows"></span></label>
     <label><input type="checkbox" id="chk-thunder" checked onchange="toggleThunder(this.checked)"> <span id="lbl-thunder"></span></label>
     <label><input type="checkbox" id="chk-progress-shading" onchange="toggleProgressShading(this.checked)"> <span id="lbl-progress-shading"></span></label>
+    <label><input type="checkbox" id="chk-holiday-overlay" checked onchange="toggleHolidayOverlay(this.checked)"> <span id="lbl-holiday-overlay"></span></label>
     <label id="lbl-base-date"></label>
     <input type="date" id="thunder-default-date" onchange="changeThunderDefault(this.value)">
     <button id="btn-reset-progress" onclick="resetProgressPoints()"></button>
@@ -556,6 +557,7 @@ const I18N = {
     rowMemo: 'Memo',
     noColor: 'None (default)',
     progressShading: 'Progress Shading',
+    showHolidayOverlay: 'Show Holidays (Week/Month)',
     collapseRow: 'Collapse row',
     expandRow: 'Expand row',
     holidays: 'Holidays',
@@ -644,6 +646,7 @@ const I18N = {
     rowMemo: '\u30E1\u30E2',
     noColor: '\u306A\u3057\uFF08\u30C7\u30D5\u30A9\u30EB\u30C8\uFF09',
     progressShading: '\u9032\u6357\u8868\u793A',
+    showHolidayOverlay: '\u795D\u65E5\u8868\u793A\uFF08\u9031\u30FB\u6708\uFF09',
     collapseRow: '\u884C\u3092\u6298\u308A\u305F\u305F\u3080',
     expandRow: '\u884C\u3092\u5C55\u958B\u3059\u308B',
     holidays: '\u795D\u65E5',
@@ -685,6 +688,7 @@ function updateUIText() {
   document.getElementById('lbl-arrows').textContent = t('arrows');
   document.getElementById('lbl-thunder').textContent = t('thunderLine');
   document.getElementById('lbl-progress-shading').textContent = t('progressShading');
+  document.getElementById('lbl-holiday-overlay').textContent = t('showHolidayOverlay');
   document.getElementById('btn-reset-progress').textContent = t('resetAllProgress');
   document.getElementById('lbl-base-date').textContent = t('baseDate');
   document.getElementById('lbl-range').textContent = t('range');
@@ -730,6 +734,7 @@ let state = {
   arrowsVisible: true,
   arrows: [],
   progressShading: false,
+  showHolidayOverlay: true,
   holidays: []
 };
 
@@ -1032,7 +1037,7 @@ function renderHeader() {
   hdr.style.width = (columns.length * colWidth) + 'px';
 
   // Week/month view: overlay holiday spans (semi-transparent so labels remain readable)
-  if (state.timeUnit !== 'day' && columns.length > 0) {
+  if (state.timeUnit !== 'day' && state.showHolidayOverlay && columns.length > 0) {
     getHolidaySpans().forEach(span => {
       const x1 = getXForDate(span.start, columns, colWidth);
       const x2 = getXForDateEnd(span.end, columns, colWidth);
@@ -1392,7 +1397,7 @@ function getHolidaySpans() {
 
 // For week/month view: render light-orange overlay rectangles for holiday spans.
 function renderHolidayOverlays(layer) {
-  if (state.timeUnit === 'day') return;
+  if (state.timeUnit === 'day' || !state.showHolidayOverlay) return;
   getHolidaySpans().forEach(span => {
     const x1 = getXForDate(span.start, columns, colWidth);
     const x2 = getXForDateEnd(span.end, columns, colWidth);
@@ -2504,6 +2509,11 @@ function toggleProgressShading(enabled) {
   render();
 }
 
+function toggleHolidayOverlay(enabled) {
+  state.showHolidayOverlay = enabled;
+  render();
+}
+
 function changeThunderDefault(dateStr) {
   state.thunderLine.defaultDate = dateStr;
   render();
@@ -3251,6 +3261,7 @@ function applyJSONData(data) {
   if (!state.fontSize) state.fontSize = 14;
   if (state.cornerLabel === undefined) state.cornerLabel = '';
   if (state.progressShading === undefined) state.progressShading = false;
+  if (state.showHolidayOverlay === undefined) state.showHolidayOverlay = true;
   if (!state.holidays) state.holidays = [];
   if (state.lang) { currentLang = state.lang; } else { state.lang = currentLang; }
   document.getElementById('sel-lang').value = currentLang;
@@ -3259,6 +3270,7 @@ function applyJSONData(data) {
   document.getElementById('chk-arrows').checked = state.arrowsVisible !== false;
   document.getElementById('chk-thunder').checked = state.thunderLine.visible;
   document.getElementById('chk-progress-shading').checked = state.progressShading;
+  document.getElementById('chk-holiday-overlay').checked = state.showHolidayOverlay !== false;
   document.getElementById('thunder-default-date').value = state.thunderLine.defaultDate;
   if (state.sidebarWidth) {
     document.documentElement.style.setProperty('--sidebar-width', state.sidebarWidth + 'px');
