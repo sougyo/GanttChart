@@ -152,6 +152,17 @@ body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; font-size
 .holiday-add-row input[type=text] { flex: 1; }
 .holiday-editor-empty { padding: 12px 8px; color: #aaa; font-size: 0.88em; text-align: center; }
 
+/* Tag chips */
+.tag-chips-container { display: flex; flex-wrap: wrap; gap: 2px; min-height: 28px; padding: 4px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 4px; }
+.tag-chip { display: inline-flex; align-items: center; gap: 3px; background: #e3f0fc; color: #1565c0; border: 1px solid #90caf9; border-radius: 12px; padding: 2px 8px; font-size: 0.82em; }
+.tag-chip-del { cursor: pointer; color: #888; font-size: 0.9em; background: none; border: none; padding: 0 1px; line-height: 1; }
+.tag-chip-del:hover { color: #d00; }
+.tag-add-row { display: flex; gap: 4px; align-items: center; }
+.tag-add-row input { flex: 1; padding: 4px 6px; border: 1px solid #bbb; border-radius: 4px; font-size: 0.9em; }
+.tag-add-row button { flex-shrink: 0; padding: 4px 10px; border: 1px solid #bbb; border-radius: 4px; cursor: pointer; background: #fff; font-size: 0.9em; }
+.tag-add-row button:hover { background: #e3f0fc; }
+.tag-error { color: #e53935; font-size: 0.82em; min-height: 1.2em; margin-top: 2px; }
+
 #gantt-sidebar-scroll {
   grid-row: 2; grid-column: 1;
   overflow: hidden;
@@ -445,6 +456,11 @@ body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; font-size
     <button id="btn-autosave" onclick="toggleAutoSave()"></button>
   </div>
   <div class="toolbar-sep"></div>
+  <div class="toolbar-group" id="tag-filter-group">
+    <label id="lbl-tag-filter"></label>
+    <select id="sel-tag-filter" onchange="setTagFilter(this.value)"></select>
+  </div>
+  <div class="toolbar-sep"></div>
   <div class="toolbar-group">
     <select id="sel-lang" onchange="changeLang(this.value)">
       <option value="en">EN</option>
@@ -574,6 +590,11 @@ const I18N = {
     autoSaveDisableConfirm: 'Disable auto save?',
     autoSaveNotSupported: 'Auto save is not supported in this browser.',
     autoSaved: 'Auto saved',
+    tags: 'Tags',
+    tagFilter: 'Tag:',
+    allTags: '(All)',
+    invalidTag: 'Invalid tag: only letters, numbers, spaces, _ and - are allowed.',
+    addTag: 'Add',
   },
   ja: {
     title: '\u30AC\u30F3\u30C8\u30C1\u30E3\u30FC\u30C8',
@@ -665,6 +686,11 @@ const I18N = {
     autoSaveDisableConfirm: '\u81EA\u52D5\u4FDD\u5B58\u3092\u7121\u52B9\u306B\u3057\u307E\u3059\u304B\uFF1F',
     autoSaveNotSupported: '\u3053\u306E\u30D6\u30E9\u30A6\u30B6\u3067\u306F\u81EA\u52D5\u4FDD\u5B58\u306F\u30B5\u30DD\u30FC\u30C8\u3055\u308C\u3066\u3044\u307E\u305B\u3093\u3002',
     autoSaved: '\u81EA\u52D5\u4FDD\u5B58\u3057\u307E\u3057\u305F',
+    tags: '\u30BF\u30B0',
+    tagFilter: '\u30BF\u30B0:',
+    allTags: '(\u3059\u3079\u3066)',
+    invalidTag: '\u30BF\u30B0\u304C\u7121\u52B9\u3067\u3059\uFF1A\u6587\u5B57\u3001\u6570\u5B57\u3001\u534A\u89D2\u30B9\u30DA\u30FC\u30B9\u3001_\u3001-\u306E\u307F\u4F7F\u7528\u3067\u304D\u307E\u3059\u3002',
+    addTag: '\u8FFD\u52A0',
   }
 };
 
@@ -704,6 +730,7 @@ function updateUIText() {
   updateAutoSaveButton();
   document.getElementById('btn-export').textContent = t('export');
   document.getElementById('btn-import').textContent = t('import');
+  document.getElementById('lbl-tag-filter').textContent = t('tagFilter');
   const corner = document.getElementById('gantt-corner');
   corner.textContent = state.cornerLabel || t('taskName');
 }
@@ -732,9 +759,9 @@ let state = {
   bodyHeight: null,
   viewRange: null,
   rows: [
-    { name: 'Task 1', items: [], lanes: 1 },
-    { name: 'Task 2', items: [], lanes: 1 },
-    { name: 'Task 3', items: [], lanes: 1 }
+    { name: 'Task 1', items: [], lanes: 1, tags: [] },
+    { name: 'Task 2', items: [], lanes: 1, tags: [] },
+    { name: 'Task 3', items: [], lanes: 1, tags: [] }
   ],
   thunderLine: { visible: true, points: [], defaultDate: fmtDate(new Date()) },
   arrowsVisible: true,
@@ -746,6 +773,7 @@ let state = {
 
 let appMode = 'edit'; // edit | view
 let viewRange = null; // {start, end}
+let activeTagFilter = null; // null = show all, string tag = filter
 let selectedItems = []; // [{rowIndex, itemIndex}]
 
 // ===== Undo Stack =====
@@ -941,6 +969,7 @@ function render() {
   renderItems();
   renderArrows();
   renderThunderLine();
+  updateTagFilterSelect();
   isRendering = false;
   isDirty = true;
   scheduleAutoSave();
@@ -1027,12 +1056,14 @@ function getVisibleRowIndexForY(y) {
 
 // Returns array of {row, originalIndex} for rows to display
 function getVisibleRows() {
-  if (appMode === 'edit') {
-    return state.rows.map((r, i) => ({ row: r, originalIndex: i }));
+  let rows = state.rows.map((r, i) => ({ row: r, originalIndex: i }));
+  if (activeTagFilter) {
+    rows = rows.filter(entry => (entry.row.tags || []).includes(activeTagFilter));
   }
-  return state.rows
-    .map((r, i) => ({ row: r, originalIndex: i }))
-    .filter(entry => entry.row.visible !== false && !entry.row.collapsed);
+  if (appMode === 'edit') {
+    return rows;
+  }
+  return rows.filter(entry => entry.row.visible !== false && !entry.row.collapsed);
 }
 
 let visibleRows = [];
@@ -1137,12 +1168,13 @@ function renderSidebar() {
   sb.innerHTML = '';
 
   if (appMode === 'edit') {
-    // Edit mode
-    state.rows.forEach((row, ri) => {
-      // In edit mode visibleRows = all rows, so vi === ri
+    // Edit mode: iterate visibleRows so tag filter is respected
+    visibleRows.forEach((entry, vi) => {
+      const row = entry.row;
+      const ri = entry.originalIndex;
       const div = document.createElement('div');
       div.className = 'sidebar-row';
-      if (!row.collapsed) div.style.minHeight = rowHeights[ri] + 'px';
+      if (!row.collapsed) div.style.minHeight = rowHeights[vi] + 'px';
       div.dataset.rowIndex = ri;
       if (row.color) div.style.background = row.color;
 
@@ -1160,7 +1192,7 @@ function renderSidebar() {
       handle.className = 'sidebar-drag-handle';
       handle.textContent = '☰';
       handle.title = t('dragToReorder');
-      handle.addEventListener('mousedown', e => startRowDrag(e, ri));
+      handle.addEventListener('mousedown', e => startRowDrag(e, vi));
       div.appendChild(handle);
 
       if (row.collapsed) {
@@ -1230,7 +1262,8 @@ function renderSidebar() {
 }
 
 // ===== Row Drag & Drop =====
-function startRowDrag(e, fromIndex) {
+// fromVi: visual index into visibleRows (= DOM row index)
+function startRowDrag(e, fromVi) {
   e.preventDefault();
   e.stopPropagation();
   // Commit any in-progress name editing before dragging
@@ -1239,35 +1272,35 @@ function startRowDrag(e, fromIndex) {
   }
   const sb = document.getElementById('gantt-sidebar');
   const rows = sb.querySelectorAll('.sidebar-row');
-  let targetIndex = fromIndex;
+  let targetVi = fromVi;
 
-  rows[fromIndex].classList.add('dragging');
+  rows[fromVi].classList.add('dragging');
 
   function onMove(ev) {
     // Clear all indicators
     rows.forEach(r => { r.classList.remove('drag-over-above', 'drag-over-below'); });
 
-    // Find which row the mouse is over
+    // Find which row the mouse is over (visual index)
     const sbRect = sb.getBoundingClientRect();
     const sidebarScroll = document.getElementById('gantt-sidebar-scroll');
     const y = ev.clientY - sbRect.top + sidebarScroll.scrollTop;
-    let hoverIndex = getVisibleRowIndexForY(y);
-    hoverIndex = Math.max(0, Math.min(hoverIndex, state.rows.length - 1));
+    let hoverVi = getVisibleRowIndexForY(y);
+    hoverVi = Math.max(0, Math.min(hoverVi, visibleRows.length - 1));
 
-    if (hoverIndex === fromIndex) {
-      targetIndex = fromIndex;
+    if (hoverVi === fromVi) {
+      targetVi = fromVi;
       return;
     }
 
     // Show indicator
-    if (hoverIndex < fromIndex) {
+    if (hoverVi < fromVi) {
       // Moving up: drop above the hovered row
-      rows[hoverIndex].classList.add('drag-over-above');
-      targetIndex = hoverIndex;
+      rows[hoverVi].classList.add('drag-over-above');
+      targetVi = hoverVi;
     } else {
       // Moving down: drop below the hovered row
-      rows[hoverIndex].classList.add('drag-over-below');
-      targetIndex = hoverIndex;
+      rows[hoverVi].classList.add('drag-over-below');
+      targetVi = hoverVi;
     }
   }
 
@@ -1276,8 +1309,9 @@ function startRowDrag(e, fromIndex) {
     document.removeEventListener('mouseup', onUp);
     rows.forEach(r => { r.classList.remove('dragging', 'drag-over-above', 'drag-over-below'); });
 
-    if (targetIndex !== fromIndex) {
-      moveRow(fromIndex, targetIndex);
+    if (targetVi !== fromVi) {
+      // Translate visual indices to original state indices for moveRow
+      moveRow(visibleRows[fromVi].originalIndex, visibleRows[targetVi].originalIndex);
     }
   }
 
@@ -2714,6 +2748,58 @@ function showModal(title, fields, onOk) {
       ta.style.resize = 'vertical';
       inputs[f.key] = ta;
       div.appendChild(ta);
+    } else if (f.type === 'tags') {
+      const tagsHolder = { _tags: Array.isArray(f.value) ? [...f.value] : [], get value() { return this._tags; } };
+      const chipsDiv = document.createElement('div');
+      chipsDiv.className = 'tag-chips-container';
+      const addRow = document.createElement('div');
+      addRow.className = 'tag-add-row';
+      const tagInput = document.createElement('input');
+      tagInput.type = 'text';
+      tagInput.placeholder = t('addTag') + '...';
+      const addBtn = document.createElement('button');
+      addBtn.type = 'button';
+      addBtn.textContent = t('addTag');
+      addRow.appendChild(tagInput);
+      addRow.appendChild(addBtn);
+      const errDiv = document.createElement('div');
+      errDiv.className = 'tag-error';
+      function renderTagChips() {
+        chipsDiv.innerHTML = '';
+        tagsHolder._tags.forEach((tag, idx) => {
+          const chip = document.createElement('span');
+          chip.className = 'tag-chip';
+          const chipText = document.createTextNode(tag + ' ');
+          chip.appendChild(chipText);
+          const del = document.createElement('button');
+          del.className = 'tag-chip-del';
+          del.type = 'button';
+          del.textContent = '×';
+          del.onclick = () => { tagsHolder._tags.splice(idx, 1); renderTagChips(); };
+          chip.appendChild(del);
+          chipsDiv.appendChild(chip);
+        });
+      }
+      function tryAddTag() {
+        const val = tagInput.value.trim();
+        if (!val) return;
+        if (!/^[\p{L}\p{N}\p{M} _-]+$/u.test(val)) {
+          errDiv.textContent = t('invalidTag');
+          return;
+        }
+        if (!tagsHolder._tags.includes(val)) tagsHolder._tags.push(val);
+        tagInput.value = '';
+        errDiv.textContent = '';
+        renderTagChips();
+      }
+      addBtn.onclick = tryAddTag;
+      tagInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); tryAddTag(); } });
+      tagInput.addEventListener('input', () => { errDiv.textContent = ''; });
+      renderTagChips();
+      div.appendChild(chipsDiv);
+      div.appendChild(addRow);
+      div.appendChild(errDiv);
+      inputs[f.key] = tagsHolder;
     } else {
       const inp = document.createElement('input');
       inp.type = f.type || 'text';
@@ -2774,9 +2860,11 @@ function editRowDialog(ri) {
   showModal(t('editRow'), [
     { key: 'color', label: t('rowColor'), type: 'rowColor', value: row.color || null },
     { key: 'memo', label: t('rowMemo'), type: 'textarea', value: row.memo || '' },
+    { key: 'tags', label: t('tags'), type: 'tags', value: row.tags || [] },
   ], vals => {
     row.color = vals.color || null;
     row.memo = vals.memo;
+    row.tags = vals.tags;
     render();
   });
 }
@@ -2900,6 +2988,37 @@ function deleteSelected() {
   render();
 }
 
+// ===== Tag Filter =====
+function setTagFilter(tag) {
+  activeTagFilter = tag || null;
+  render();
+}
+
+function updateTagFilterSelect() {
+  const sel = document.getElementById('sel-tag-filter');
+  if (!sel) return;
+  const allTags = new Set();
+  state.rows.forEach(row => { (row.tags || []).forEach(tag => allTags.add(tag)); });
+  const prevVal = activeTagFilter;
+  sel.innerHTML = '';
+  const defaultOpt = document.createElement('option');
+  defaultOpt.value = '';
+  defaultOpt.textContent = t('allTags');
+  sel.appendChild(defaultOpt);
+  [...allTags].sort((a, b) => a.localeCompare(b)).forEach(tag => {
+    const opt = document.createElement('option');
+    opt.value = tag;
+    opt.textContent = tag;
+    sel.appendChild(opt);
+  });
+  if (prevVal && allTags.has(prevVal)) {
+    sel.value = prevVal;
+  } else {
+    sel.value = '';
+    activeTagFilter = null;
+  }
+}
+
 // ===== Mode =====
 function setMode(mode) {
   appMode = mode;
@@ -3000,12 +3119,12 @@ function removeColumnEnd() {
 
 // ===== Row =====
 function addRow() {
-  state.rows.push({ name: t('newTask'), items: [], lanes: 1 });
+  state.rows.push({ name: t('newTask'), items: [], lanes: 1, tags: [] });
   render();
 }
 
 function insertRowAt(ri) {
-  state.rows.splice(ri, 0, { name: t('newTask'), items: [], lanes: 1 });
+  state.rows.splice(ri, 0, { name: t('newTask'), items: [], lanes: 1, tags: [] });
   // Shift thunder line points at or after the inserted position
   state.thunderLine.points.forEach(p => {
     if (p.rowIndex >= ri) p.rowIndex++;
@@ -3250,6 +3369,7 @@ function applyJSONData(data) {
       if (row.color === undefined) row.color = null;
       if (row.memo === undefined) row.memo = '';
       if (row.collapsed === undefined) row.collapsed = false;
+      if (row.tags === undefined) row.tags = [];
       row.items.forEach(item => {
         if (item.lane === undefined) item.lane = 0;
       });
@@ -3292,6 +3412,7 @@ function applyJSONData(data) {
     document.getElementById('view-end').value = state.endDate;
   }
   selectedItems = [];
+  activeTagFilter = null;
   render();
   isDirty = false;
   return true;
