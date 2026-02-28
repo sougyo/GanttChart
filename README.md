@@ -178,4 +178,4 @@ Exported JSON structure:
 
 Copyright 2026 Shogo Matsumoto
 
-Licensed under the Apache License 2.0. See the [LICENSE](LICENSE) file for details.
+Licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
