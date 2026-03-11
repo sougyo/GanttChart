@@ -820,6 +820,7 @@ const ROW_COLORS = [null,'#E3F2FD','#E8F5E9','#FFF3E0','#FCE4EC','#F3E5F5','#FFF
 function parseDate(s) { const p = s.split('-'); return new Date(+p[0], +p[1]-1, +p[2]); }
 function fmtDate(d) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 function addDays(d, n) { const r = new Date(d); r.setDate(r.getDate()+n); return r; }
+function addMonths(d, n) { const r = new Date(d); r.setMonth(r.getMonth()+n); return r; }
 function daysBetween(a, b) { return Math.round((b.getTime()-a.getTime())/86400000); }
 function calcBusinessDays(startDateStr, endDateStr) {
   const holidaySet = new Set((state.holidays || []).map(h => h.date));
@@ -4288,6 +4289,52 @@ document.addEventListener('keydown', e => {
     const overlay = document.querySelector('.modal-overlay');
     if (overlay) overlay.remove();
     if (selectedItems.length > 0) { clearSelection(); render(); }
+  }
+  if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+    if (appMode === 'edit' && selectedItems.length > 0 &&
+        !document.querySelector('.modal-overlay') &&
+        document.activeElement.tagName !== 'INPUT' &&
+        !document.activeElement.isContentEditable) {
+      e.preventDefault();
+      const originals = selectedItems.map(s => {
+        const item = state.rows[s.rowIndex].items[s.itemIndex];
+        if (item.type === 'task') return { startDate: item.startDate, endDate: item.endDate, lane: item.lane || 0 };
+        return { date: item.date, lane: item.lane || 0 };
+      });
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        const dir = e.key === 'ArrowRight' ? 1 : -1;
+        selectedItems.forEach(s => {
+          const item = state.rows[s.rowIndex].items[s.itemIndex];
+          if (state.timeUnit === 'month') {
+            if (item.type === 'task') {
+              item.startDate = fmtDate(addMonths(parseDate(item.startDate), dir));
+              item.endDate = fmtDate(addMonths(parseDate(item.endDate), dir));
+            } else {
+              item.date = fmtDate(addMonths(parseDate(item.date), dir));
+            }
+          } else {
+            const days = state.timeUnit === 'week' ? 7 : 1;
+            if (item.type === 'task') {
+              item.startDate = fmtDate(addDays(parseDate(item.startDate), dir * days));
+              item.endDate = fmtDate(addDays(parseDate(item.endDate), dir * days));
+            } else {
+              item.date = fmtDate(addDays(parseDate(item.date), dir * days));
+            }
+          }
+        });
+      } else {
+        const laneDir = e.key === 'ArrowDown' ? 1 : -1;
+        selectedItems.forEach(s => {
+          const item = state.rows[s.rowIndex].items[s.itemIndex];
+          const numLanes = state.rows[s.rowIndex].lanes || 1;
+          item.lane = Math.max(0, Math.min(numLanes - 1, (item.lane || 0) + laneDir));
+        });
+      }
+      pushUndo({ type: 'moveItems', items: selectedItems.map((s, i) => ({
+        rowIndex: s.rowIndex, itemIndex: s.itemIndex, ...originals[i]
+      }))});
+      render();
+    }
   }
 });
 </script>
