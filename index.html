@@ -3599,23 +3599,16 @@ function renderToCanvas() {
     // Lane separator lines
     const numLanes = row.lanes || 1;
     if (numLanes > 1) {
-      const canvasLabelExtra = Math.ceil(fs * 0.8) + 4;
-      let cHasAbove = false, cHasBelow = false;
-      row.items.forEach(item => {
-        if (item.type === 'task') {
-          const pos = item.taskLabelPosition || 'inside';
-          if (pos === 'above') cHasAbove = true;
-          if (pos === 'below') cHasBelow = true;
-        }
-      });
-      const cExtraTop = cHasAbove ? canvasLabelExtra : 0;
-      const cExtraBottom = cHasBelow ? canvasLabelExtra : 0;
-      const cLaneH = (rh - cExtraTop - cExtraBottom) / numLanes;
+      const { heights: laneHeights } = getLaneHeights(row);
+      const naturalTotal = laneHeights.reduce((a, b) => a + b, 0);
+      const laneScale = naturalTotal > 0 ? rh / naturalTotal : 1;
       ctx.strokeStyle = '#ccc';
       ctx.lineWidth = 1;
       ctx.setLineDash([4, 3]);
+      let cumLaneY = 0;
       for (let li = 1; li < numLanes; li++) {
-        const sepY = y + cExtraTop + cLaneH * li;
+        cumLaneY += laneHeights[li - 1] * laneScale;
+        const sepY = y + cumLaneY;
         ctx.beginPath(); ctx.moveTo(sw, sepY); ctx.lineTo(totalW, sepY); ctx.stroke();
       }
       ctx.setLineDash([]);
