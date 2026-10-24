@@ -18,7 +18,7 @@ Visit https://sougyo.github.io/GanttChart/ or open `index.html` in your browser.
 - **Font size** adjustment (A- / A+ buttons) — applies to the chart table only, not the toolbar
 - **Fit Width** button — adjusts column width so all columns fit the current screen width
 - **Export / Import** project data as JSON (filename: `YYYYMMDD-hhmmss.json`)
-- **Auto-save** — select a file once; the chart is automatically saved to it after every change (requires Chrome/Edge with File System Access API)
+- **Auto-save** — select a file once; the chart is automatically saved to it after every change (requires Chrome/Edge with File System Access API). Existing files are overwritten only when their chart ID matches the open chart.
 - **Multi-language support**: English (default) and Japanese, switchable via toolbar selector
 - **Resizable sidebar**: drag the border between the task name column and the date columns to adjust width
 - **Resizable table height**: drag the bottom edge of the chart to resize vertically
