@@ -581,6 +581,12 @@ const I18N = {
     autoSaved: 'Auto saved',
     autoSaveIdMismatch: 'Auto save was not enabled because this file belongs to a different chart.',
     autoSaveInvalidTarget: 'Auto save was not enabled because the selected file is not a valid Gantt chart file.',
+    autoSaveChooseTarget: 'Choose an auto-save destination',
+    autoSaveChooseTargetHelp: 'Use an existing file only if it was exported from this chart, or create a new file in a folder.',
+    autoSaveExistingTarget: 'Use Existing File',
+    autoSaveNewTarget: 'Create New File',
+    autoSavePermissionDenied: 'Write permission was not granted. Auto save remains disabled.',
+    autoSaveWriteFailed: 'Failed to create or write the auto-save file.',
     tags: 'Tags',
     tagFilter: 'Tag:',
     allTags: '(All)',
@@ -679,6 +685,12 @@ const I18N = {
     autoSaved: '\u81EA\u52D5\u4FDD\u5B58\u3057\u307E\u3057\u305F',
     autoSaveIdMismatch: '\u5225\u306E\u30AC\u30F3\u30C8\u30C1\u30E3\u30FC\u30C8\u306E\u30D5\u30A1\u30A4\u30EB\u306E\u305F\u3081\u3001\u81EA\u52D5\u4FDD\u5B58\u3092\u6709\u52B9\u306B\u3057\u307E\u305B\u3093\u3067\u3057\u305F\u3002',
     autoSaveInvalidTarget: '\u9078\u629E\u3057\u305F\u30D5\u30A1\u30A4\u30EB\u306F\u6709\u52B9\u306A\u30AC\u30F3\u30C8\u30C1\u30E3\u30FC\u30C8\u3067\u306F\u306A\u3044\u305F\u3081\u3001\u81EA\u52D5\u4FDD\u5B58\u3092\u6709\u52B9\u306B\u3057\u307E\u305B\u3093\u3067\u3057\u305F\u3002',
+    autoSaveChooseTarget: '\u81EA\u52D5\u4FDD\u5B58\u5148\u306E\u9078\u629E',
+    autoSaveChooseTargetHelp: '\u65E2\u5B58\u30D5\u30A1\u30A4\u30EB\u306F\u3053\u306E\u30C1\u30E3\u30FC\u30C8\u304B\u3089\u51FA\u529B\u3057\u305F\u3082\u306E\u3060\u3051\u4F7F\u7528\u3067\u304D\u307E\u3059\u3002\u307E\u305F\u306F\u3001\u30D5\u30A9\u30EB\u30C0\u30FC\u3092\u9078\u3093\u3067\u65B0\u898F\u30D5\u30A1\u30A4\u30EB\u3092\u4F5C\u6210\u3057\u307E\u3059\u3002',
+    autoSaveExistingTarget: '\u65E2\u5B58\u30D5\u30A1\u30A4\u30EB\u3092\u4F7F\u7528',
+    autoSaveNewTarget: '\u65B0\u898F\u30D5\u30A1\u30A4\u30EB\u3092\u4F5C\u6210',
+    autoSavePermissionDenied: '\u66F8\u304D\u8FBC\u307F\u6A29\u9650\u304C\u8A31\u53EF\u3055\u308C\u306A\u304B\u3063\u305F\u305F\u3081\u3001\u81EA\u52D5\u4FDD\u5B58\u306F\u7121\u52B9\u306E\u307E\u307E\u3067\u3059\u3002',
+    autoSaveWriteFailed: '\u81EA\u52D5\u4FDD\u5B58\u30D5\u30A1\u30A4\u30EB\u306E\u4F5C\u6210\u307E\u305F\u306F\u66F8\u304D\u8FBC\u307F\u306B\u5931\u6557\u3057\u307E\u3057\u305F\u3002',
     tags: '\u30BF\u30B0',
     tagFilter: '\u30BF\u30B0:',
     allTags: '(\u3059\u3079\u3066)',
@@ -3199,6 +3211,7 @@ function clearViewRange() {
 let autoSaveHandle = null;
 let autoSaveTimer = null;
 let autoSaveTargetNeedsInitialization = false;
+const knownAutoSaveTargets = [];
 
 function openAutoSaveDB() {
   return new Promise((resolve, reject) => {
@@ -3256,37 +3269,75 @@ async function inspectAutoSaveTarget(handle, expectedDocumentId, allowEmpty = fa
   }
 }
 
+async function handlesReferToSameFile(first, second) {
+  if (first === second) return true;
+  if (!first || !second || typeof first.isSameEntry !== 'function') return false;
+  try {
+    return await first.isSameEntry(second);
+  } catch (e) {
+    return false;
+  }
+}
+
+async function rememberAutoSaveTarget(handle, documentId) {
+  for (const target of knownAutoSaveTargets) {
+    if (await handlesReferToSameFile(handle, target.handle)) {
+      target.handle = handle;
+      target.documentId = documentId;
+      return;
+    }
+  }
+  knownAutoSaveTargets.push({ handle, documentId });
+}
+
+async function isStoredTargetForAnotherDocument(handle, documentId) {
+  for (const target of knownAutoSaveTargets) {
+    if (target.documentId !== documentId && await handlesReferToSameFile(handle, target.handle)) {
+      return true;
+    }
+  }
+  const stored = await loadAutoSaveHandleFromDB();
+  if (!stored || !stored.handle || stored.documentId === documentId) return false;
+  return handlesReferToSameFile(handle, stored.handle);
+}
+
 async function deactivateAutoSave(clearStoredHandle = true) {
   autoSaveHandle = null;
   autoSaveTargetNeedsInitialization = false;
   clearTimeout(autoSaveTimer);
+  updateAutoSaveButton();
   if (clearStoredHandle) {
     try { await clearAutoSaveHandleFromDB(); } catch (e) { /* IndexedDB may be unavailable */ }
   }
-  updateAutoSaveButton();
 }
 
 async function doAutoSave() {
-  if (!autoSaveHandle) return;
+  if (!autoSaveHandle) return false;
   const handle = autoSaveHandle;
   const documentId = state.id;
+  let writable = null;
   try {
     const targetStatus = await inspectAutoSaveTarget(handle, documentId, autoSaveTargetNeedsInitialization);
-    if (handle !== autoSaveHandle || documentId !== state.id) return;
+    if (handle !== autoSaveHandle || documentId !== state.id) return false;
     if (targetStatus !== 'match' && targetStatus !== 'empty') {
       await deactivateAutoSave();
       alert(t(targetStatus === 'mismatch' ? 'autoSaveIdMismatch' : 'autoSaveInvalidTarget'));
-      return;
+      return false;
     }
-    const writable = await handle.createWritable();
+    // Start from a copy of the existing file so an interrupted write cannot
+    // replace it with an empty temporary file.
+    writable = await handle.createWritable({ keepExistingData: true });
     if (handle !== autoSaveHandle || documentId !== state.id) {
-      if (typeof writable.abort === 'function') await writable.abort();
-      return;
+      await writable.abort();
+      writable = null;
+      return false;
     }
     const json = getStateJSON();
     await writable.write(json);
+    await writable.truncate(new Blob([json]).size);
     await writable.close();
-    if (handle !== autoSaveHandle || documentId !== state.id) return;
+    writable = null;
+    if (handle !== autoSaveHandle || documentId !== state.id) return false;
     autoSaveTargetNeedsInitialization = false;
     isDirty = false;
     const btn = document.getElementById('btn-autosave');
@@ -3295,12 +3346,20 @@ async function doAutoSave() {
       clearTimeout(btn._revertTimer);
       btn._revertTimer = setTimeout(() => updateAutoSaveButton(), 1500);
     }
+    return true;
   } catch (err) {
+    if (writable) {
+      try { await writable.abort(); } catch (abortError) { /* Preserve the original error */ }
+    }
     if (err.name === 'NotAllowedError') {
       if (handle === autoSaveHandle) await deactivateAutoSave();
+      alert(t('autoSavePermissionDenied'));
     } else {
       console.error('Auto save error:', err);
+      if (handle === autoSaveHandle) await deactivateAutoSave();
+      alert(t('autoSaveWriteFailed') + '\n' + err.name + ': ' + err.message);
     }
+    return false;
   }
 }
 
@@ -3326,8 +3385,85 @@ function updateAutoSaveButton() {
   }
 }
 
+function chooseAutoSaveTargetMode() {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+
+    const h3 = document.createElement('h3');
+    h3.textContent = t('autoSaveChooseTarget');
+    modal.appendChild(h3);
+
+    const help = document.createElement('p');
+    help.textContent = t('autoSaveChooseTargetHelp');
+    modal.appendChild(help);
+
+    const btns = document.createElement('div');
+    btns.className = 'modal-btns';
+
+    let finished = false;
+    function finish(mode) {
+      if (finished) return;
+      finished = true;
+      document.removeEventListener('keydown', onKeyDown);
+      overlay.remove();
+      resolve(mode);
+    }
+    function onKeyDown(e) {
+      if (e.key === 'Escape') finish(null);
+    }
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.textContent = t('cancel');
+    cancelBtn.onclick = () => finish(null);
+    const existingBtn = document.createElement('button');
+    existingBtn.textContent = t('autoSaveExistingTarget');
+    existingBtn.onclick = () => finish('existing');
+    const newBtn = document.createElement('button');
+    newBtn.className = 'btn-primary';
+    newBtn.textContent = t('autoSaveNewTarget');
+    newBtn.onclick = () => finish('new');
+
+    btns.appendChild(cancelBtn);
+    btns.appendChild(existingBtn);
+    btns.appendChild(newBtn);
+    modal.appendChild(btns);
+    overlay.appendChild(modal);
+    overlay.addEventListener('mousedown', e => { if (e.target === overlay) finish(null); });
+    document.addEventListener('keydown', onKeyDown);
+    document.body.appendChild(overlay);
+  });
+}
+
+async function createNewAutoSaveHandle() {
+  if (!window.showDirectoryPicker) throw new DOMException('', 'NotSupportedError');
+  const directory = await window.showDirectoryPicker({ mode: 'readwrite' });
+  const now = new Date();
+  const timestamp = now.getFullYear()
+    + String(now.getMonth() + 1).padStart(2, '0')
+    + String(now.getDate()).padStart(2, '0')
+    + '-'
+    + String(now.getHours()).padStart(2, '0')
+    + String(now.getMinutes()).padStart(2, '0')
+    + String(now.getSeconds()).padStart(2, '0');
+  const baseName = 'gantt-chart-' + timestamp;
+  for (let suffix = 0; ; suffix++) {
+    const name = baseName + (suffix ? '-' + suffix : '') + '.json';
+    try {
+      await directory.getFileHandle(name);
+    } catch (e) {
+      if (e.name === 'NotFoundError') {
+        return directory.getFileHandle(name, { create: true });
+      }
+      throw e;
+    }
+  }
+}
+
 async function toggleAutoSave() {
-  if (!window.showSaveFilePicker) {
+  if (!window.showOpenFilePicker) {
     alert(t('autoSaveNotSupported'));
     return;
   }
@@ -3337,12 +3473,32 @@ async function toggleAutoSave() {
     return;
   }
   try {
-    const handle = await window.showSaveFilePicker({
-      suggestedName: 'gantt-chart.json',
-      types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }]
-    });
+    const mode = await chooseAutoSaveTargetMode();
+    if (!mode) return;
+    let handle;
+    let targetStatus;
+    if (mode === 'existing') {
+      [handle] = await window.showOpenFilePicker({
+        multiple: false,
+        types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }]
+      });
+      const permission = await handle.requestPermission({ mode: 'readwrite' });
+      if (permission !== 'granted') {
+        alert(t('autoSavePermissionDenied'));
+        return;
+      }
+      targetStatus = await inspectAutoSaveTarget(handle, state.id);
+    } else {
+      handle = await createNewAutoSaveHandle();
+      targetStatus = 'empty';
+    }
     const documentId = state.id;
-    const targetStatus = await inspectAutoSaveTarget(handle, documentId, true);
+    // A newly created handle has a verified unused name. Only existing files
+    // need to be compared with previously associated targets.
+    if (mode === 'existing' && await isStoredTargetForAnotherDocument(handle, documentId)) {
+      alert(t('autoSaveIdMismatch'));
+      return;
+    }
     if (documentId !== state.id) return;
     if (targetStatus !== 'match' && targetStatus !== 'empty') {
       alert(t(targetStatus === 'mismatch' ? 'autoSaveIdMismatch' : 'autoSaveInvalidTarget'));
@@ -3350,23 +3506,34 @@ async function toggleAutoSave() {
     }
     autoSaveHandle = handle;
     autoSaveTargetNeedsInitialization = targetStatus === 'empty';
-    await storeAutoSaveHandle(handle, documentId);
+    await rememberAutoSaveTarget(handle, documentId);
     updateAutoSaveButton();
-    await doAutoSave();
+    const saved = await doAutoSave();
+    if (saved && handle === autoSaveHandle) {
+      try {
+        await storeAutoSaveHandle(handle, documentId);
+      } catch (storageError) {
+        // Auto-save still works for this session when handle persistence is unavailable.
+        console.warn('Could not persist auto-save handle:', storageError);
+      }
+    }
   } catch (e) {
-    if (e.name !== 'AbortError') console.error(e);
+    if (e.name === 'NotSupportedError') {
+      alert(t('autoSaveNotSupported'));
+    } else if (e.name !== 'AbortError') {
+      console.error(e);
+      alert(t('autoSaveWriteFailed') + '\n' + e.name + ': ' + e.message);
+    }
   }
 }
 
 async function restoreAutoSaveHandle() {
-  if (!window.showSaveFilePicker) return;
   try {
     const stored = await loadAutoSaveHandleFromDB();
     if (!stored) return;
     // Older versions stored only the handle. Do not reactivate it without a chart ID.
     const handle = stored.handle;
     if (!handle || stored.documentId !== state.id) {
-      await clearAutoSaveHandleFromDB();
       return;
     }
     const documentId = state.id;
@@ -3380,6 +3547,7 @@ async function restoreAutoSaveHandle() {
     }
     autoSaveHandle = handle;
     autoSaveTargetNeedsInitialization = false;
+    await rememberAutoSaveTarget(handle, documentId);
     updateAutoSaveButton();
   } catch (e) {
     // Handle may be stale or API unavailable
@@ -3421,7 +3589,8 @@ function applyJSONData(data) {
   const incomingId = typeof data.id === 'string' && data.id ? data.id : generateDocumentId();
   if (autoSaveHandle && incomingId !== state.id) {
     // Switching documents must immediately detach the previous document's save target.
-    deactivateAutoSave();
+    // Keep its persisted document association so it cannot be claimed as a new target.
+    deactivateAutoSave(false);
   }
   state = data;
   state.id = incomingId;
